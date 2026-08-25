@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DeepSeek Harness /goal 命令核心原理：命令解析、事件溯源、状态与 activation 双轨、Goal Round 调度。">
+  <title>/goal：一条命令如何驱动同会话自治循环</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #0a0b0d;
+      --panel: #111318;
+      --panel-2: #171a20;
+      --paper: #e9e3d5;
+      --muted: #9b978c;
+      --line: #353940;
+      --durable: #f1d84b;
+      --durable-soft: rgba(241, 216, 75, .13);
+      --live: #5eb5ff;
+      --live-soft: rgba(94, 181, 255, .13);
+      --danger: #ff776d;
+      --ok: #72d7a4;
+      --display: Georgia, "Times New Roman", serif;
+      --body: "Avenir Next", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --step: clamp(1rem, 1.5vw, 1.4rem);
+      --radius: 2px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        var(--ink);
+      background-size: 32px 32px;
+      color: var(--paper);
+      font-family: var(--body);
+      line-height: 1.65;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 100;
+      opacity: .045;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+    }
+    a { color: inherit; }
+    button, select { font: inherit; }
+    button:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 2px solid var(--live);
+      outline-offset: 3px;
+    }
+
+    .masthead {
+      min-height: 88vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr);
+      align-items: end;
+      gap: 5vw;
+      padding: clamp(3rem, 8vw, 8rem) clamp(1.2rem, 5vw, 5rem) 4rem;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+      position: relative;
+    }
+    .masthead::after {
+      content: "/goal";
+      position: absolute;
+      right: -2vw;
+      top: -8vw;
+      color: transparent;
+      -webkit-text-stroke: 1px rgba(233,227,213,.08);
+      font: 900 clamp(10rem, 30vw, 31rem)/1 var(--mono);
+      letter-spacing: -.12em;
+      pointer-events: none;
+    }
+    .eyebrow {
+      font: 700 .72rem/1.2 var(--mono);
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--durable);
+      margin: 0 0 1.5rem;
+    }
+    h1, h2, h3 { margin-top: 0; }
+    h1 {
+      font: 400 clamp(3.6rem, 9vw, 9rem)/.88 var(--display);
+      letter-spacing: -.065em;
+      max-width: 11ch;
+      margin-bottom: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+    .lead {
+      max-width: 58ch;
+      font-size: clamp(1.05rem, 1.6vw, 1.35rem);
+      color: #c6c0b3;
+      margin: 0;
+    }
+    .thesis {
+      position: relative;
+      z-index: 2;
+      border-left: 1px solid var(--durable);
+      padding: 1.3rem 0 1.3rem 1.4rem;
+      margin-bottom: .8rem;
+      background: linear-gradient(90deg, var(--durable-soft), transparent);
+    }
+    .thesis strong { display: block; font: 500 1.45rem/1.25 var(--display); margin-bottom: .7rem; }
+    .thesis p { color: var(--muted); margin: 0; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .rail-nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 3rem 1rem 2rem 1.5rem;
+      border-right: 1px solid var(--line);
+      align-self: start;
+    }
+    .rail-nav .index { color: var(--muted); font: .65rem var(--mono); letter-spacing: .15em; margin-bottom: 1.4rem; }
+    .rail-nav a {
+      display: flex;
+      gap: .65rem;
+      padding: .65rem 0;
+      text-decoration: none;
+      color: #aaa69c;
+      font-size: .88rem;
+    }
+    .rail-nav a:hover { color: var(--paper); }
+    .rail-nav a span { color: #5d616a; font: .7rem var(--mono); padding-top: .25rem; }
+    main { min-width: 0; }
+    section {
+      padding: clamp(4rem, 8vw, 8rem) clamp(1.2rem, 5vw, 5rem);
+      border-bottom: 1px solid var(--line);
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 3rem;
+      align-items: start;
+      margin-bottom: 3.5rem;
+    }
+    .section-no { font: .7rem var(--mono); color: var(--durable); letter-spacing: .15em; }
+    h2 { font: 400 clamp(2.2rem, 5vw, 5rem)/.98 var(--display); letter-spacing: -.045em; margin-bottom: 0; }
+    .section-intro { color: #aaa69c; max-width: 58ch; margin: 0; }
+
+    .callout {
+      padding: 1.2rem 1.4rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .callout strong { color: var(--paper); }
+    code, .code { font-family: var(--mono); color: var(--paper); }
+
+    .grammar {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+    .grammar button {
+      min-height: 130px;
+      text-align: left;
+      padding: 1rem;
+      color: var(--paper);
+      background: var(--panel);
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .grammar button:hover, .grammar button.active { background: var(--durable); color: var(--ink); }
+    .grammar .token { display: block; font: 700 .73rem var(--mono); margin-bottom: 2rem; }
+    .grammar .verb { font: 500 1.15rem var(--display); }
+    .grammar-detail {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      padding: 2rem;
+      border: 1px solid var(--line);
+      border-top: 0;
+      background: rgba(17,19,24,.76);
+      min-height: 190px;
+    }
+    .grammar-detail h3 { font: 400 1.8rem var(--display); margin-bottom: .7rem; }
+    .grammar-detail p { margin: 0; color: #aaa69c; }
+    .branch-code { white-space: pre-wrap; font: .78rem/1.8 var(--mono); color: var(--durable); margin: 0; }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: minmax(250px, .8fr) minmax(0, 1.4fr);
+      gap: 2.5rem;
+    }
+    .step-list { display: grid; gap: .55rem; align-content: start; }
+    .step-button {
+      display: grid;
+      grid-template-columns: 2.5rem 1fr;
+      gap: .8rem;
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: #b5b0a5;
+      padding: .9rem;
+      cursor: pointer;
+    }
+    .step-button:hover, .step-button.active { border-color: var(--live); color: var(--paper); background: var(--live-soft); }
+    .step-button .num { font: .7rem var(--mono); color: var(--live); padding-top: .28rem; }
+    .step-button strong { display: block; font-size: .88rem; }
+    .step-button small { color: var(--muted); font: .66rem var(--mono); }
+    .step-stage {
+      min-height: 520px;
+      position: sticky;
+      top: 2rem;
+      border: 1px solid var(--line);
+      padding: clamp(1.5rem, 4vw, 3rem);
+      background:
+        linear-gradient(130deg, rgba(94,181,255,.07), transparent 55%),
+        var(--panel);
+    }
+    .stage-kind { font: .68rem var(--mono); color: var(--live); letter-spacing: .14em; }
+    .step-stage h3 { font: 400 clamp(2rem, 4vw, 4rem)/1 var(--display); margin: 1rem 0 1.4rem; }
+    .step-stage .explain { color: #bbb5aa; max-width: 63ch; }
+    .io-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); margin: 2rem 0; }
+    .io-grid > div { background: var(--panel-2); padding: 1rem; }
+    .io-grid label { display: block; font: .64rem var(--mono); color: var(--muted); margin-bottom: .5rem; text-transform: uppercase; }
+    .source-link { display: inline-flex; align-items: center; gap: .5rem; font: .72rem var(--mono); color: var(--durable); text-decoration: none; border-bottom: 1px solid currentColor; }
+
+    .tracks {
+      display: grid;
+      grid-template-columns: 150px minmax(0,1fr);
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .track-labels, .track-lines { display: grid; grid-template-rows: repeat(2, 180px); }
+    .track-labels { border-right: 1px solid var(--line); }
+    .track-label {
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+    .track-label:last-child { border-bottom: 0; }
+    .track-label strong { font: 1rem var(--mono); }
+    .track-label small { color: var(--muted); }
+    .track-label.durable strong { color: var(--durable); }
+    .track-label.live strong { color: var(--live); }
+    .track-line {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      align-items: center;
+      gap: 1rem;
+      padding: 1.2rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .track-line:last-child { border-bottom: 0; }
+    .track-line::before { content:""; position:absolute; left:1rem; right:1rem; top:50%; height:1px; background:var(--line); }
+    .track-node { position: relative; z-index:1; padding:.7rem; background:var(--ink); border:1px solid var(--line); font:.7rem/1.4 var(--mono); }
+    .track-line.durable .track-node.active { border-color:var(--durable); box-shadow:0 0 0 4px var(--durable-soft); }
+    .track-line.live .track-node.active { border-color:var(--live); box-shadow:0 0 0 4px var(--live-soft); }
+    .split-note { margin-top: 1.5rem; color: var(--muted); }
+
+    .simulator {
+      display: grid;
+      grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr);
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+    }
+    .sim-control, .sim-output { background: var(--panel); padding: clamp(1.3rem, 3vw, 2.4rem); }
+    .field { margin-bottom: 1.2rem; }
+    .field label { display:block; color:var(--muted); font:.68rem var(--mono); margin-bottom:.45rem; text-transform:uppercase; }
+    select {
+      width: 100%;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      color: var(--paper);
+      padding: .8rem;
+      border-radius: 0;
+    }
+    .run-button {
+      width:100%; border:0; background:var(--durable); color:var(--ink); padding:.95rem; font-weight:800; cursor:pointer;
+    }
+    .run-button:hover { filter: brightness(1.08); }
+    .snapshot-head { display:flex; justify-content:space-between; gap:1rem; color:var(--muted); font:.67rem var(--mono); border-bottom:1px solid var(--line); padding-bottom:.8rem; }
+    .snapshot-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--line); margin-top:1rem; }
+    .snapshot-grid > div { background:var(--panel-2); padding:1rem; }
+    .snapshot-grid span { display:block; color:var(--muted); font:.64rem var(--mono); }
+    .snapshot-grid strong { display:block; margin-top:.25rem; font:500 1.2rem var(--display); overflow-wrap:anywhere; }
+    .event-log { margin:1.4rem 0 0; padding:1rem; background:#08090b; color:var(--ok); white-space:pre-wrap; min-height:120px; font:.73rem/1.75 var(--mono); border-left:3px solid var(--ok); }
+    .event-log.error { color:var(--danger); border-left-color:var(--danger); }
+
+    .guards { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; }
+    .guard { border-top:2px solid var(--danger); padding:1.3rem; background:var(--panel); }
+    .guard .tag { font:.64rem var(--mono); color:var(--danger); }
+    .guard h3 { font:500 1.35rem var(--display); margin:.9rem 0 .55rem; }
+    .guard p { color:var(--muted); margin:0; font-size:.9rem; }
+
+    .source-map { display:grid; grid-template-columns:repeat(2,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line); }
+    .source-card { min-height:180px; padding:1.3rem; border-right:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--panel); text-decoration:none; }
+    .source-card:hover { background:var(--durable-soft); }
+    .source-card small { color:var(--durable); font:.65rem var(--mono); }
+    .source-card h3 { font:500 1.25rem var(--display); margin:1.2rem 0 .5rem; }
+    .source-card p { color:var(--muted); margin:0; font-size:.85rem; }
+
+    footer { padding:3rem clamp(1.2rem,5vw,5rem); color:var(--muted); font:.72rem var(--mono); display:flex; justify-content:space-between; gap:2rem; }
+    .reveal { opacity:0; transform:translateY(14px); transition:opacity .55s ease, transform .55s ease; }
+    .reveal.visible { opacity:1; transform:none; }
+
+    @media (max-width: 1050px) {
+      .grammar { grid-template-columns:repeat(3,1fr); }
+      .guards { grid-template-columns:1fr; }
+      .masthead { grid-template-columns:1fr; min-height:auto; padding-top:7rem; }
+    }
+    @media (max-width: 780px) {
+      .shell { display:block; }
+      .rail-nav { display:none; }
+      .section-head, .pipeline, .simulator, .grammar-detail { grid-template-columns:1fr; }
+      .step-stage { position:relative; top:auto; min-height:460px; }
+      .grammar { grid-template-columns:repeat(2,1fr); }
+      .tracks { grid-template-columns:95px minmax(0,1fr); overflow-x:auto; }
+      .track-lines { min-width:620px; }
+      .track-labels, .track-lines { grid-template-rows:repeat(2,210px); }
+      .source-map { grid-template-columns:1fr; }
+      footer { flex-direction:column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior:auto; }
+      .reveal { opacity:1; transform:none; transition:none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">DeepSeek Harness / Runtime anatomy 01</p>
+      <h1>一条命令，两个状态世界</h1>
+      <p class="lead"><code>/goal</code> 不直接“让模型继续”。它先提交一个可重放的目标事实，再由独立驱动器把这个事实转化为下一轮普通 Agent 输入。持久状态与运行权限始终分离。</p>
+    </div>
+    <aside class="thesis">
+      <strong>核心公式</strong>
+      <p><code>Command → GoalService → goal/change → goal/changed → checkpoint → Agent.followup → user/message</code></p>
+    </aside>
+  </header>
+
+  <div class="shell">
+    <nav class="rail-nav" aria-label="页面章节">
+      <div class="index">FIELD MANUAL / 06</div>
+      <a href="#grammar"><span>01</span>命令语法</a>
+      <a href="#pipeline"><span>02</span>执行管线</a>
+      <a href="#dual-state"><span>03</span>双轨状态</a>
+      <a href="#simulator"><span>04</span>状态模拟器</a>
+      <a href="#guards"><span>05</span>竞态护栏</a>
+      <a href="#sources"><span>06</span>源码地图</a>
+    </nav>
+
+    <main>
+      <section id="grammar">
+        <div class="section-head reveal">
+          <div><span class="section-no">01 / PARSER</span><h2>语法很窄，目标很宽</h2></div>
+          <p class="section-intro">解析器只占有五个完整控制词。除这些精确形式外，任何非空后缀都被视为目标文本。因此 <code>/goal pause after verification</code> 创建的是字面目标，而不是 pause 命令。</p>
+        </div>
+        <div class="grammar reveal" role="tablist" aria-label="Goal 命令分支">
+          <button class="active" role="tab" aria-selected="true" data-branch="show"><span class="token">EMPTY</span><span class="verb">/goal</span></button>
+          <button role="tab" aria-selected="false" data-branch="create"><span class="token">FALLBACK</span><span class="verb">&lt;objective&gt;</span></button>
+          <button role="tab" aria-selected="false" data-branch="edit"><span class="token">PREFIX</span><span class="verb">edit …</span></button>
+          <button role="tab" aria-selected="false" data-branch="pause"><span class="token">EXACT</span><span class="verb">pause</span></button>
+          <button role="tab" aria-selected="false" data-branch="resume"><span class="token">EXACT</span><span class="verb">resume</span></button>
+          <button role="tab" aria-selected="false" data-branch="clear"><span class="token">EXACT</span><span class="verb">clear</span></button>
+        </div>
+        <div class="grammar-detail reveal" aria-live="polite">
+          <div><h3 id="branch-title"></h3><p id="branch-copy"></p></div>
+          <pre class="branch-code" id="branch-code"></pre>
+        </div>
+        <div class="callout reveal" style="margin-top:1.4rem"><strong>模型不会参与命令分发。</strong> <code>ctx.commands</code> 直接调用 Handler；命令输入、状态文本和错误文本都不进入模型请求。只有后续 Goal Round 才会把目标状态转成模型可见的普通 <code>user/message</code>。</div>
+      </section>
+
+      <section id="pipeline">
+        <div class="section-head reveal">
+          <div><span class="section-no">02 / CONTROL FLOW</span><h2>从斜杠到下一轮</h2></div>
+          <p class="section-intro">选择任一步骤查看它所属的插件、输入输出和提交语义。注意命令插件只负责翻译；领域服务拥有状态，Round Driver 拥有调度。</p>
+        </div>
+        <div class="pipeline reveal">
+          <div class="step-list" id="step-list" aria-label="执行步骤"></div>
+          <article class="step-stage" id="step-stage" aria-live="polite">
+            <span class="stage-kind" id="stage-kind"></span>
+            <h3 id="stage-title"></h3>
+            <p class="explain" id="stage-copy"></p>
+            <div class="io-grid"><div><label>INPUT</label><code id="stage-input"></code></div><div><label>OUTPUT</label><code id="stage-output"></code></div></div>
+            <a class="source-link" id="stage-source" href="#">↗ 查看源码位置</a>
+          </article>
+        </div>
+      </section>
+
+      <section id="dual-state">
+        <div class="section-head reveal">
+          <div><span class="section-no">03 / TWO TRACKS</span><h2>Phase 不是 Activation</h2></div>
+          <p class="section-intro">Goal 的“事实状态”和“能否自动继续”解决的是不同问题。恢复 Session 时，日志仍可投影出 <code>active</code>，但新的进程绝不会继承旧进程的自动执行权限。</p>
+        </div>
+        <div class="tracks reveal" aria-label="持久状态与进程状态双轨图">
+          <div class="track-labels">
+            <div class="track-label durable"><strong>DURABLE</strong><small>Session Log<br>可恢复</small></div>
+            <div class="track-label live"><strong>LIVE</strong><small>Process Local<br>不回放</small></div>
+          </div>
+          <div class="track-lines">
+            <div class="track-line durable">
+              <div class="track-node active">create<br>active · rev 1</div><div class="track-node">pause<br>paused · rev 2</div><div class="track-node">resume<br>active · rev 3</div><div class="track-node">complete<br>complete · rev 4</div>
+            </div>
+            <div class="track-line live">
+              <div class="track-node active">armed</div><div class="track-node">disarmed</div><div class="track-node">armed</div><div class="track-node">disarmed</div>
+            </div>
+          </div>
+        </div>
+        <p class="split-note reveal"><strong style="color:var(--live)">关键断点：</strong>Session resume、fork、Driver reload 或执行错误会把 activation 设为 <code>disarmed</code>，却不伪造一次 durable phase 变更。必须由人类授权的 <code>/goal resume</code> 重新 arm。</p>
+      </section>
+
+      <section id="simulator">
+        <div class="section-head reveal">
+          <div><span class="section-no">04 / STATE LAB</span><h2>试运行，不写日志</h2></div>
+          <p class="section-intro">选择当前快照和命令，观察 CAS revision、phase、activation 与事件输出。模拟器只覆盖命令层的主要规则，不调用真实 Harness。</p>
+        </div>
+        <div class="simulator reveal">
+          <form class="sim-control" id="sim-form">
+            <div class="field"><label for="sim-phase">当前 Goal</label><select id="sim-phase"><option value="none">无 Goal</option><option value="active-armed">active / armed</option><option value="active-disarmed">active / disarmed</option><option value="paused">paused / disarmed</option><option value="blocked">blocked / disarmed</option><option value="complete">complete / disarmed</option></select></div>
+            <div class="field"><label for="sim-command">执行命令</label><select id="sim-command"><option value="show">/goal</option><option value="create">/goal ship verified release</option><option value="edit">/goal edit ship verified release</option><option value="pause">/goal pause</option><option value="resume">/goal resume</option><option value="clear">/goal clear</option></select></div>
+            <button class="run-button" type="submit">运行状态转换 →</button>
+          </form>
+          <div class="sim-output">
+            <div class="snapshot-head"><span>PROJECTED GOAL VIEW</span><span id="sim-result-label">READY</span></div>
+            <div class="snapshot-grid"><div><span>phase</span><strong id="out-phase">—</strong></div><div><span>activation</span><strong id="out-activation">—</strong></div><div><span>revision</span><strong id="out-revision">—</strong></div><div><span>next action</span><strong id="out-next">—</strong></div></div>
+            <pre class="event-log" id="event-log">选择状态与命令，然后运行。</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="guards">
+        <div class="section-head reveal">
+          <div><span class="section-no">05 / RACE FENCES</span><h2>为什么不会无限乱跑</h2></div>
+          <p class="section-intro">自动续行不是一个 while(true)。Driver 在每轮之前跨越持久化、身份、revision、Inbox 和 Agent 生命周期多道护栏，并在不确定时关闭权限。</p>
+        </div>
+        <div class="guards">
+          <article class="guard reveal"><span class="tag">FENCE / CAS</span><h3>精确 revision</h3><p>所有变更携带 <code>{ id, revision }</code>。若当前 revision 已变化，旧命令或旧 Round reservation 被拒绝，防止覆盖新目标。</p></article>
+          <article class="guard reveal"><span class="tag">FENCE / DURABILITY</span><h3>先 flush，再调度</h3><p><code>goal/changed</code> 产生持久化义务。Driver 在排队下一轮前等待 <code>ctx.sessions.flush()</code>，然后重新检查竞争输入和状态。</p></article>
+          <article class="guard reveal"><span class="tag">FENCE / ADMISSION</span><h3>认领后再验一次</h3><p><code>agent/pre-step</code> 校验 Goal id、revision、round、phase、activation 和消息内容。任何过期 reservation 都关闭该 Step。</p></article>
+          <article class="guard reveal"><span class="tag">FENCE / FAIRNESS</span><h3>人类输入优先</h3><p>普通 next-turn 消息出现时，Driver 标记 <code>competingQueued</code>，不抢在用户输入前自动开始新的 Goal Round。</p></article>
+          <article class="guard reveal"><span class="tag">FENCE / BUDGET</span><h3>Round 上限</h3><p>只有已经进入 Session 的 Goal 来源 <code>user/message</code> 才推进计数。达到上限后持久化为 <code>blocked: round-limit</code>。</p></article>
+          <article class="guard reveal"><span class="tag">FENCE / FAIL CLOSED</span><h3>错误即 disarm</h3><p>Agent 错误、flush 失败、Driver 卸载或请求达到 max-tokens 时，自动续行权限被移除，避免在不确定状态继续执行。</p></article>
+        </div>
+      </section>
+
+      <section id="sources">
+        <div class="section-head reveal">
+          <div><span class="section-no">06 / SOURCE MAP</span><h2>四个包，各守一责</h2></div>
+          <p class="section-intro">源码边界刻意阻止命令、领域状态和调度策略混在一起。下面链接以本 HTML 所在的仓库根目录为基准。</p>
+        </div>
+        <div class="source-map reveal">
+          <a class="source-card" href="packages/goal/command-goal/src/index.ts"><small>ADAPTER</small><h3>command-goal</h3><p>解析斜杠输入、调用领域动词、渲染直接 UI 文本；不拥有 Goal 状态。</p></a>
+          <a class="source-card" href="packages/goal/goal/src/index.ts"><small>DOMAIN</small><h3>goal</h3><p>验证状态转换、CAS revision、追加 <code>goal/change</code>、投影当前 GoalView。</p></a>
+          <a class="source-card" href="packages/goal/goal-round-driver/src/index.ts"><small>POLICY CONSUMER</small><h3>goal-round-driver</h3><p>监听提交后的变更，执行 checkpoint，构造下一轮消息并处理竞态。</p></a>
+          <a class="source-card" href="packages/goal/goal-round-driver/src/prompt.ts"><small>MODEL SURFACE</small><h3>round prompt</h3><p>把当前目标 revision 和 Round 编号渲染为可持久化的模型指令。</p></a>
+          <a class="source-card" href="packages/goal/tool-goal/src/index.ts"><small>MODEL CONTROL</small><h3>tool-goal</h3><p>提供 <code>get_goal</code>、<code>create_goal</code>、<code>update_goal</code>；与人类命令共享领域。</p></a>
+          <a class="source-card" href="docs/subsystems/goal.md"><small>REFERENCE</small><h3>Goal subsystem</h3><p>GoalRef、GoalSnapshot、GoalMessageSource、事件和服务 API 的完整参考。</p></a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer><span>DEEPSEEK HARNESS · /GOAL ARCHITECTURE</span><span>静态分析依据：当前仓库源码 · 页面不执行真实命令</span></footer>
+
+  <script>
+    const branches = {
+      show: { title: '只读投影', copy: '读取当前 GoalView；没有目标时显示用法。它不追加事件，也不会触发模型轮次。', code: "trim() === ''\n→ ctx.goals.get(agent)\n→ renderGoal('Goal', current)" },
+      create: { title: '创建并启用', copy: '当没有未完成目标时，创建新 Goal identity，revision 从 1 开始，phase=active，activation=armed。', code: 'fallback non-empty input\n→ goals.create(agent, { objective })\n→ goal/change(create)' },
+      edit: { title: '原位修订', copy: '保持 Goal identity、phase 与 activation，仅替换 objective，并让 revision 加一。已完成目标的 edit 会创建全新 Goal。', code: '/^edit(?=\\s)/iu\n→ goals.edit(agent, currentRef, patch)\n→ goal/change(edit)' },
+      pause: { title: '持久暂停', copy: '只允许从 active 进入 paused，同时把自动续行权限设为 disarmed。', code: "input.toLowerCase() === 'pause'\n→ goals.pause(agent, currentRef)\n→ paused / disarmed" },
+      resume: { title: '重新授权', copy: '把 active-disarmed、paused 或 blocked 恢复为 active/armed；Round 预算耗尽时拒绝。', code: "input.toLowerCase() === 'resume'\n→ goals.resume(agent, currentRef)\n→ active / armed" },
+      clear: { title: '清除当前指针', copy: '当前 Goal 从投影中消失，但日志保留带新 revision 的 tombstone，因此历史仍可审计。', code: "input.toLowerCase() === 'clear'\n→ goals.clear(agent, currentRef)\n→ goal/change(clear tombstone)" }
+    };
+
+    const steps = [
+      { kind:'COMMAND PLANE', title:'注册与直接分发', short:'ctx.commands', copy:'command-goal 插件以 name=goal 注册全局命令。命令适配器识别斜杠输入后直接调用 Handler，不发起模型请求。', input:'/goal edit ship verified release', output:'CommandInvocation { agent, rawInput, attachments, signal }', source:'packages/goal/command-goal/src/index.ts#L188' },
+      { kind:'ADAPTER', title:'解析窄语法', short:'parseGoalCommand', copy:'先 trim；空输入是 show；完整 clear/pause/resume 是控制；edit 加空白前缀是 edit；其余非空文本全部是 create objective。', input:'rawInput', output:"GoalCommand discriminated union", source:'packages/goal/command-goal/src/index.ts#L33' },
+      { kind:'DOMAIN READ', title:'读取当前投影', short:'ctx.goals.get', copy:'GoalService 验证传入的是 Registry 中完全相同的 live Agent，然后增量 fold Session 新事件，返回脱离内部缓存的 GoalView。', input:'exact live Agent', output:'GoalView | undefined', source:'packages/goal/goal/src/index.ts#L216' },
+      { kind:'DOMAIN MUTATION', title:'校验状态与 CAS', short:'GoalRef', copy:'变更引用当前 {id, revision}。expectCurrent 对比精确 identity 和 revision；状态机再检查本操作允许的 phase。', input:'GoalRef + operation', output:'next full GoalSnapshot', source:'packages/goal/goal/src/index.ts#L400' },
+      { kind:'COMMIT POINT', title:'提交 goal/change', short:'Session.append', copy:'领域服务构造完整变更快照或 clear tombstone，先追加到所属 Session，再同步 Goal cache。事件提交是状态变化的权威时刻。', input:'GoalChangeMeta', output:'durable session event', source:'packages/goal/goal/src/index.ts#L514' },
+      { kind:'LIVE NOTIFICATION', title:'发布 goal/changed', short:'agent scoped emit', copy:'只有 durable 事件成功提交后，服务才发出 scope-filtered goal/changed。监听器失败被隔离，不能回滚已经提交的状态。', input:'committed GoalChanged', output:'driver wake-up signal', source:'packages/goal/goal/src/index.ts#L541' },
+      { kind:'DURABILITY FENCE', title:'等待存储检查点', short:'sessions.flush', copy:'Round Driver 标记 needsCheckpoint。Agent 空闲且没有竞争输入时先 flush，再重新检查所有条件；flush 失败则 disarm。', input:'goal/changed + idle Agent', output:'durable quiescence or disarm', source:'packages/goal/goal-round-driver/src/index.ts#L137' },
+      { kind:'SCHEDULER', title:'预留下一 Round', short:'roundsStarted + 1', copy:'Driver 检查 active、armed 和 Round 上限，构造携带 goalId、revision、round 的 UserMessage，并保存本地 RoundAttempt reservation。', input:'current GoalView', output:'goal-sourced UserMessage', source:'packages/goal/goal-round-driver/src/index.ts#L164' },
+      { kind:'AGENT API', title:'进入唯一 Inbox', short:'agent.followup', copy:'Goal Round 与普通用户输入走同一个 Agent API 和 next-turn FIFO。Driver 没有第二套执行循环。', input:'UserMessage(source.kind=goal)', output:'Inbox insertion + driver wake', source:'packages/goal/goal-round-driver/src/index.ts#L174' },
+      { kind:'ADMISSION FENCE', title:'Pre-step 最终复核', short:'agent/pre-step', copy:'消息被 claim 后，Driver 再验证 reservation、消息内容、当前 revision、phase、activation 和顺序。通过后才成为 Session 中的 user/message，并推进 roundsStarted。', input:'claimed goal message', output:'enter(messages) | reject', source:'packages/goal/goal-round-driver/src/index.ts#L333' }
+    ];
+
+    function setBranch(name) {
+      const item = branches[name];
+      document.querySelectorAll('[data-branch]').forEach(button => {
+        const active = button.dataset.branch === name;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      document.getElementById('branch-title').textContent = item.title;
+      document.getElementById('branch-copy').textContent = item.copy;
+      document.getElementById('branch-code').textContent = item.code;
+    }
+    document.querySelectorAll('[data-branch]').forEach(button => button.addEventListener('click', () => setBranch(button.dataset.branch)));
+    setBranch('show');
+
+    const list = document.getElementById('step-list');
+    steps.forEach((step, index) => {
+      const button = document.createElement('button');
+      button.className = 'step-button';
+      button.innerHTML = `<span class="num">${String(index + 1).padStart(2,'0')}</span><span><strong>${step.title}</strong><small>${step.short}</small></span>`;
+      button.addEventListener('click', () => setStep(index));
+      list.appendChild(button);
+    });
+    function setStep(index) {
+      const step = steps[index];
+      document.querySelectorAll('.step-button').forEach((button, i) => button.classList.toggle('active', i === index));
+      document.getElementById('stage-kind').textContent = `${String(index + 1).padStart(2,'0')} / ${step.kind}`;
+      document.getElementById('stage-title').textContent = step.title;
+      document.getElementById('stage-copy').textContent = step.copy;
+      document.getElementById('stage-input').textContent = step.input;
+      document.getElementById('stage-output').textContent = step.output;
+      document.getElementById('stage-source').href = step.source;
+    }
+    setStep(0);
+
+    const presets = {
+      none:{exists:false,phase:'—',activation:'—',revision:0},
+      'active-armed':{exists:true,phase:'active',activation:'armed',revision:3},
+      'active-disarmed':{exists:true,phase:'active',activation:'disarmed',revision:3},
+      paused:{exists:true,phase:'paused',activation:'disarmed',revision:3},
+      blocked:{exists:true,phase:'blocked',activation:'disarmed',revision:3},
+      complete:{exists:true,phase:'complete',activation:'disarmed',revision:3}
+    };
+    function simulate(stateKey, command) {
+      const before = {...presets[stateKey]};
+      const result = {...before};
+      let event = '— no durable event';
+      let next = 'none';
+      let error = '';
+      if (command === 'show') return {result, event, next:'render current projection', error};
+      if (command === 'create') {
+        if (before.exists && before.phase !== 'complete') error = 'GOAL_ALREADY_EXISTS · 使用 edit 或 clear';
+        else Object.assign(result,{exists:true,phase:'active',activation:'armed',revision:1}), event='goal/change { operation: "create", revision: 1 }', next='checkpoint → round 1';
+      } else if (command === 'edit') {
+        if (!before.exists) error='GOAL_NOT_FOUND';
+        else if (before.phase === 'complete') Object.assign(result,{exists:true,phase:'active',activation:'armed',revision:1}), event='goal/change { operation: "create", new goal identity }', next='checkpoint → round 1';
+        else result.revision++, event=`goal/change { operation: "edit", revision: ${result.revision} }`, next=result.activation === 'armed' ? 'checkpoint → next round' : 'await resume';
+      } else if (command === 'pause') {
+        if (!before.exists) error='GOAL_NOT_FOUND'; else if (before.phase !== 'active') error=`GOAL_INVALID_TRANSITION · cannot pause from ${before.phase}`;
+        else Object.assign(result,{phase:'paused',activation:'disarmed',revision:before.revision+1}), event=`goal/change { operation: "pause", revision: ${result.revision} }`, next='await resume';
+      } else if (command === 'resume') {
+        if (!before.exists) error='GOAL_NOT_FOUND'; else if (before.phase === 'complete' || (before.phase === 'active' && before.activation === 'armed')) error='GOAL_INVALID_TRANSITION';
+        else Object.assign(result,{phase:'active',activation:'armed',revision:before.revision+1}), event=`goal/change { operation: "resume", revision: ${result.revision} }`, next='checkpoint → next round';
+      } else if (command === 'clear') {
+        if (!before.exists) return {result,event:'— no goal to clear',next:'none',error};
+        Object.assign(result,{exists:false,phase:'—',activation:'—',revision:before.revision+1}); event=`goal/change { operation: "clear", tombstoneRevision: ${result.revision} }`; next='none';
+      }
+      return {result,event,next,error};
+    }
+    document.getElementById('sim-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const state = document.getElementById('sim-phase').value;
+      const command = document.getElementById('sim-command').value;
+      const outcome = simulate(state, command);
+      document.getElementById('out-phase').textContent = outcome.result.phase;
+      document.getElementById('out-activation').textContent = outcome.result.activation;
+      document.getElementById('out-revision').textContent = outcome.result.exists ? outcome.result.revision : (outcome.result.revision ? `${outcome.result.revision} tombstone` : '—');
+      document.getElementById('out-next').textContent = outcome.error ? 'rejected' : outcome.next;
+      const log = document.getElementById('event-log');
+      log.classList.toggle('error', Boolean(outcome.error));
+      log.textContent = outcome.error ? `REJECTED\n${outcome.error}\n\nSession log unchanged.` : `ACCEPTED\n${outcome.event}\n\nLive consequence: ${outcome.next}`;
+      document.getElementById('sim-result-label').textContent = outcome.error ? 'REJECTED' : 'COMMITTED';
+    });
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); } });
+    }, { threshold:.08 });
+    document.querySelectorAll('.reveal').forEach(element => observer.observe(element));
+  </script>
+</body>
+</html>
