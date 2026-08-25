@@ -11,6 +11,11 @@ import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
+import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai/src/auth.ts'
+import {
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+} from '@deepseek-ai/dsh-llm-pi-ai/src/config.ts'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   assertServiceable,
@@ -64,6 +69,8 @@ function resolvedProfile(config: Config): ModelHubProfile {
     apiKeyEnv: resolved.apiKeyEnv,
     streamIdleTimeoutMs: resolved.streamIdleTimeoutMs,
     maxRequestImageBytes: resolved.maxRequestImageBytes,
+    requestImagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+    requestImageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     retryPolicy: resolved.retryPolicy,
     configuredMaxTokens: resolved.configuredMaxTokens,
     piProvider: buildProvider(resolved),
@@ -111,6 +118,10 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
+    auth: {
+      credentials: credentialStoreFrom(ctx),
+      authContext: authContextFrom(ctx),
+    },
     resolveAttachments,
     onReplayDegrade: ({ model, reason }) => {
       ctx.logger.warn(

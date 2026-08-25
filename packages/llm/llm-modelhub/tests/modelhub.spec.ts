@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageRequestPolicy,
+  RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -184,9 +186,21 @@ describe('ModelHub adapter', () => {
       width: 1,
       height: 1,
     }
-    const readImage = vi.fn((_ref: ImageAttachmentRef): Promise<StoredImageAttachment> => Promise.resolve({
-      ref,
+    const readImageRequest = vi.fn((
+      attachment: ImageAttachmentRef,
+      _policy: ImageRequestPolicy,
+      _signal?: AbortSignal,
+    ): Promise<RequestImageAttachment> => Promise.resolve({
+      variantId: ImageVariantId('modelhub-test-variant'),
+      attachment,
       data: Uint8Array.of(1),
+      mediaType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+      depth: 'uchar',
+      space: 'srgb',
+      hasAlpha: true,
     }))
     class TestAttachmentStore extends AttachmentStore {
       readonly imageLimits: ImageAttachmentLimits = {
@@ -207,7 +221,15 @@ describe('ModelHub adapter', () => {
       }
 
       readImage(value: ImageAttachmentRef): Promise<StoredImageAttachment> {
-        return readImage(value)
+        return Promise.resolve({ ref: value, data: Uint8Array.of(1) })
+      }
+
+      override readImageRequest(
+        value: ImageAttachmentRef,
+        policy: ImageRequestPolicy,
+        signal?: AbortSignal,
+      ): Promise<RequestImageAttachment> {
+        return readImageRequest(value, policy, signal)
       }
     }
     await ctx.plugin(TestAttachmentStore)
@@ -222,7 +244,10 @@ describe('ModelHub adapter', () => {
       })],
     })) assembler.push(chunk)
     expect(assembler.finish).toEqual({ kind: 'stop' })
-    expect(readImage).toHaveBeenCalledWith(ref)
+    expect(readImageRequest).toHaveBeenCalledWith(ref, {
+      maxPixels: 2048 * 2048,
+      maxBytes: 1024 * 1024,
+    }, expect.any(AbortSignal))
   })
 
   it('warns when legacy replay state must degrade to provider-neutral content', async () => {
