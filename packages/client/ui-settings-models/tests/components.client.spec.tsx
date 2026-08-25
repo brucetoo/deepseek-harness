@@ -75,6 +75,20 @@ const DeepSeekConfig = Schema.object({
   ]),
 })
 
+const ModelHubConfig = Schema.object({
+  endpoint: Schema.string().required(),
+  apiKeyEnv: Schema.string().role('credential-ref'),
+  defaultContextWindow: Schema.number().step(1).min(1),
+  defaultMaxTokens: Schema.number().step(1).min(1),
+  models: Schema.array(Schema.object({
+    id: Schema.string().required(),
+    name: Schema.string(),
+    contextWindow: Schema.number().step(1).min(1),
+    maxTokens: Schema.number().step(1).min(1),
+    input: Schema.array(Schema.union(['text', 'image'])),
+  })),
+})
+
 const DEFAULT_DEEPSEEK_MODELS = [
   {
     id: 'deepseek-v4-flash',
@@ -227,6 +241,45 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
   const mounted = await mountSection(overrides)
   fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
   return mounted
+}
+
+async function mountModelHubCard(overrides: Parameters<typeof scriptedFace>[0] = {}) {
+  const scripted = scriptedFace(overrides)
+  const namespace: SettingsNamespaceView = {
+    ns: 'llm-modelhub',
+    schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as unknown,
+    value: {
+      endpoint: 'https://modelhub.example/api/crawl',
+      apiKeyEnv: 'AIDP_MODELHUB_AK',
+      defaultContextWindow: 262_144,
+      defaultMaxTokens: 32_768,
+      models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', input: ['text'] }],
+    },
+    base: {
+      endpoint: 'https://modelhub.example/api/crawl',
+      apiKeyEnv: 'AIDP_MODELHUB_AK',
+      defaultContextWindow: 262_144,
+      defaultMaxTokens: 32_768,
+      models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', input: ['text'] }],
+    },
+    user: {},
+    applies: 'live',
+    secrets: [],
+    revision: 0,
+  }
+  const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+  render(<ProviderEditor
+    provider="bytedance-modelhub"
+    displayName="ByteDance ModelHub"
+    namespace={namespace}
+    schema={settingsSchema}
+    settingsPath={[]}
+    api={scripted.face as never}
+    t={t}
+    readOnly={false}
+    onClose={() => {}}
+  />)
+  return scripted
 }
 
 describe('ModelsSection', () => {
@@ -442,6 +495,55 @@ describe('ModelsSection', () => {
       ops: [{ op: 'set', path: ['baseURL'], value: 'https://next2' }],
       expectedRevision: 0,
     })
+  })
+
+  it('edits ModelHub credentials, its exact endpoint, and its inherited model catalog', async () => {
+    const modelHub = {
+      endpoint: 'https://modelhub.example/api/crawl',
+      apiKeyEnv: 'AIDP_MODELHUB_AK',
+      defaultContextWindow: 262_144,
+      defaultMaxTokens: 32_768,
+      models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', input: ['text'] }],
+    }
+    const mutate = vi.fn((_request: unknown) => Promise.resolve(ok({
+      ns: 'llm-modelhub',
+      schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as unknown,
+      value: modelHub,
+      base: modelHub,
+      user: {},
+      applies: 'live' as const,
+      secrets: [],
+      revision: 1,
+    })))
+    const set = vi.fn(() => Promise.resolve(ok({})))
+    await mountModelHubCard({ mutate, set })
+
+    const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
+    fireEvent.change(key, { target: { value: 'replacement-key' } })
+    fireEvent.click(screen.getByText(en.customized))
+    const endpoint = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
+    expect(endpoint.placeholder).toBe(modelHub.endpoint)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('gpt-5.6-sol')
+    expandRow(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder).toBe('32768')
+    fireEvent.change(endpoint, { target: { value: 'https://next.modelhub.example/exact' } })
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'ModelHub Sol' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-modelhub',
+      ops: [
+        { op: 'set', path: ['endpoint'], value: 'https://next.modelhub.example/exact' },
+        {
+          op: 'set',
+          path: ['models'],
+          value: [{ id: 'gpt-5.6-sol', name: 'ModelHub Sol', input: ['text'] }],
+        },
+      ],
+      expectedRevision: 0,
+    })
+    expect(set).toHaveBeenCalledWith({ ref: 'AIDP_MODELHUB_AK', value: 'replacement-key' })
   })
 
   it('materializes inherited models and adds an arbitrary DeepSeek id', async () => {

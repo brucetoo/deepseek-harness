@@ -1,0 +1,17 @@
+# Optional ModelHub provider bundle. Installing this package adds one adapter
+# beside the dormant generic pi-ai adapter; removing the bundle removes the
+# route, models, settings section, and credential reference together.
+
+- insert:
+    - id: llm-modelhub
+      name: '@deepseek-ai/dsh-llm-modelhub'
+      config:
+        endpoint: https://aidp.bytedance.net/api/modelhub/online/v2/crawl
+        apiKeyEnv: AIDP_MODELHUB_AK
+        models:
+          - id: gpt-5.6-sol
+            name: GPT-5.6 Sol
+            input: [text]
+          - id: gpt-5.5-2026-04-24
+            name: GPT-5.5 (2026-04-24)
+            input: [text]

@@ -6,11 +6,11 @@
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
- * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * the collapsed 自定义设置 area carries the per-family extras (the endpoint,
+ * the direct adapters' id/name/context-window model catalogs, and the display
+ * name and wire protocol of a pi-ai route the adapter does not ship — the two
+ * fields the create card asked that route for, editable here for the same
+ * reason).
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -36,7 +36,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'modelhub' | 'pi-ai' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -128,6 +128,7 @@ export function pathOps(
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
+  if (ns === 'llm-modelhub') return 'modelhub'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -266,7 +267,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     /* v8 ignore next -- apply is only reachable from the rendered card, which required a resolved node */
     if (props.credentialOnly !== true && node !== undefined && settingsPath.length === 0) {
-      const sectionError = schema.validate(node, next)
+      const base = typeof namespace.base === 'object' && namespace.base !== null
+        && !Array.isArray(namespace.base)
+        ? namespace.base as Record<string, unknown>
+        : {}
+      const sectionError = schema.validate(node, { ...base, ...next })
       if (sectionError !== undefined) return sectionError
     }
     const materializesNativeProfile = layout === 'pi-ai'
@@ -342,7 +347,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: Exclude<EditorLayout, 'unknown'>): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -350,8 +355,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
+    const endpointField = family === 'modelhub' ? 'endpoint' : 'baseURL'
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
-    const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
+    const defaultMaxTokens = schema.getPath(
+      fallback,
+      [family === 'modelhub' ? 'defaultMaxTokens' : 'maxTokens'],
+    )
     const keyPlaceholder = keyLocked
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
@@ -422,14 +431,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               <input
                 className={styles['input']}
                 type="text"
-                value={stringAt(draft, 'baseURL') ?? ''}
+                value={stringAt(draft, endpointField) ?? ''}
                 placeholder={family === 'deepseek'
                   ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                  : stringAt(fallback, endpointField) ?? t('baseUrlDefault')}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
-                  setField('baseURL', event.target.value === '' ? undefined : event.target.value)
+                  setField(endpointField, event.target.value === '' ? undefined : event.target.value)
                 }}
               />
             </div>
@@ -458,10 +467,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {/* Both families edit the same rows through the same contract; only
-                the extras differ — DeepSeek's inherited capacities, pi-ai's
-                endpoint interrogation. */}
-            {family === 'deepseek'
+            {/* Every family edits the same rows through the same contract; only
+                the extras differ — the direct adapters inherit capacities,
+                while pi-ai can interrogate its endpoint. */}
+            {family !== 'pi-ai'
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}

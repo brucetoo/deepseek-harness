@@ -959,6 +959,55 @@ Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicy
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:66`](../packages/llm/llm-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-llm-modelhub"></a>
+
+## `@deepseek-ai/dsh-llm-modelhub`
+
+Requires: `llm`
+
+```ts config-catalog
+/** ModelHub plugin configuration and `llm-modelhub` settings-section value. */
+export interface Config {
+  /** Exact HTTP(S) POST target; the plugin never appends `/chat/completions`. */
+  endpoint?: string
+  /** Credential reference resolved per request. */
+  apiKeyEnv?: string
+  /** Models exposed on the fixed `bytedance-modelhub` route. */
+  models?: ModelHubModelConfig[]
+  /** Context capacity used when a model entry omits one. */
+  defaultContextWindow?: number
+  /** Output capability used when a model entry omits one. */
+  defaultMaxTokens?: number
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Maximum accumulated base64 image payload per request. */
+  maxRequestImageBytes?: number
+  /** Provider-owned model-request retry policy. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** Configuration for one ModelHub model. */
+export interface ModelHubModelConfig {
+  /** Model id sent to ModelHub. */
+  id: string
+  /** Display name; defaults to {@link id}. */
+  name?: string
+  /** Maximum combined request and response context in tokens. */
+  contextWindow?: number
+  /** Maximum output tokens and default request cap when configured. */
+  maxTokens?: number
+  /** Request modalities; defaults to text. */
+  input?: ModelHubModality[]
+}
+
+/** One input modality accepted by a configured ModelHub model. */
+export type ModelHubModality = Model<'openai-completions'>['input'][number]
+```
+
+Depends on: `Model` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-modelhub/src/config.ts:53`](../packages/llm/llm-modelhub/src/config.ts)
+
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`

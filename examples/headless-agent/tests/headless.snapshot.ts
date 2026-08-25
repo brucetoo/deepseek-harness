@@ -39,6 +39,8 @@ const compactionStreamExpected = join(compactionScenarioDir, 'stream-json.expect
 const compactionConfigPath = fileURLToPath(new URL('../compaction.cordis.snapshot.yml', import.meta.url))
 const credentialsScenarioDir = join(snapshotsDir, 'missing-credential')
 const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snapshot.yml', import.meta.url))
+const modelHubCredentialScenarioDir = join(snapshotsDir, 'modelhub-missing-credential')
+const modelHubCredentialConfigPath = fileURLToPath(new URL('../modelhub.cordis.snapshot.yml', import.meta.url))
 // Same keyless composition as the missing-credential scenario: the endpoint is
 // never dialed either way, because a supplied-but-unusable key fails credential
 // resolution exactly where an absent one does.
@@ -436,6 +438,34 @@ describe('headless stream-json snapshots', () => {
     )
     expect(normalized).toContain('or export DEEPSEEK_API_KEY in the launching environment')
     expect(normalized).not.toContain('as a last resort')
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('logs the optional ModelHub plugin credential failure through the one-shot app', async () => {
+    const streamExpected = join(modelHubCredentialScenarioDir, 'stream-json.expected.jsonl')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'ModelHub missing-credential headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-modelhub-credential-',
+      binScript,
+      libBinScript: binScript,
+      configPath: modelHubCredentialConfigPath,
+      binArgs: [modelHubCredentialConfigPath, 'say pong'],
+      tsconfigPath,
+      env: {
+        AIDP_MODELHUB_AK: '',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: (cwd) => { runCwd = cwd },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+    expect(normalized).toContain(
+      'store AIDP_MODELHUB_AK through the credentials service or export AIDP_MODELHUB_AK',
+    )
+    expect(normalized).toContain('"provider":"bytedance-modelhub","model":"gpt-5.6-sol"')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('logs actionable invalid-credential guidance through the one-shot app', async () => {
