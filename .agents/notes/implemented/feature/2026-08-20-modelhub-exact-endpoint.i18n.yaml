@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-modelhub-exact-endpoint.md
+2026-08-20-modelhub-exact-endpoint.md: 212cf8e91508e946650a1255fd1f7792ca5b8353
+2026-08-20-modelhub-exact-endpoint.zh.md: ffa398724b5d2326b430b40d6970a3d2837933b1
