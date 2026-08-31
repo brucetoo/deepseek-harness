@@ -335,9 +335,15 @@ Owns the default model selection independently of any Host or transport. The com
 ```ts cordis-catalog
 /**
  * Read the current default model selection.
- * @returns a detached provider, model, and optional reasoning selection.
+ * @returns a detached logical model-selection intent.
  */
-currentSelection(): ModelSelection
+currentSelection(): ModelSelectionIntent
+
+/**
+ * Read the deployment's concrete Agent creation fallback.
+ * @returns a detached concrete composition selection.
+ */
+compositionSelection(): ModelSelectionIntent & { kind: 'model' }
 
 /**
  * Save the complete default model selection. A deployment without a settings
@@ -345,7 +351,7 @@ currentSelection(): ModelSelection
  * @param next - resolved selection accepted by an entry point.
  * @returns fulfillment after the optional settings write settles.
  */
-async saveSelection(next: ModelSelection): Promise<void>
+async saveSelection(next: ModelSelectionIntent): Promise<void>
 ```
 
 Source: [`packages/core/agent-default-model/src/index.ts`](../../packages/core/agent-default-model/src/index.ts)

@@ -52,6 +52,30 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
   await Promise.resolve() // manager notifier flush
 }
 
+describe('session deep link', () => {
+  it('selects the session query parameter after the initial list arrives', async () => {
+    vi.stubGlobal('location', { search: '?session=linked-session' })
+    try {
+      const b = bench()
+      await feedList(b, [{ id: 'linked-session' }, { id: 'other-session' }])
+      expect(b.svc.list.getSnapshot().current).toBe('linked-session')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the persisted selection when no session query parameter exists', async () => {
+    vi.stubGlobal('location', { search: '?fixture=demo' })
+    try {
+      const b = bench()
+      await feedList(b, [{ id: 'listed-session' }])
+      expect(b.svc.list.getSnapshot().current).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('list store projection', () => {
   it('projects durable titles separately from cwd/id display fallbacks and parent links', async () => {
     const b = bench()

@@ -12,7 +12,8 @@ import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelSelection, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
+  ModelReasoningEffort, ModelSelectionIntent, ResolvedModelRoute, SessionListMetadata,
+  SessionProjectionsBlock, SessionSearchItem, SessionSummary,
 } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -145,12 +146,26 @@ export const sessionHistoryRequestSchema = z.object({
   maxMessages: z.number().int().positive().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.history'>>>
 
-/** Complete provider/model selection. */
-export const modelSelectionSchema = z.object({
+/** Strict logical model-selection discriminant. */
+export const modelSelectionIntentSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('model'),
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    reasoningEffort: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('auto'),
+    pool: z.string().min(1).optional(),
+  }),
+]) satisfies z.ZodType<Wire<ModelSelectionIntent>>
+
+/** Concrete physical request provenance. */
+export const resolvedModelRouteSchema = z.strictObject({
   provider: z.string().min(1),
   model: z.string().min(1),
   reasoningEffort: z.string().min(1).optional(),
-}) satisfies z.ZodType<Wire<ModelSelection>>
+}) satisfies z.ZodType<Wire<ResolvedModelRoute>>
 
 /** One adapter-owned reasoning effort. */
 export const modelReasoningEffortSchema = z.object({
@@ -248,24 +263,25 @@ export const sessionModelsRequestSchema = z.object({
 }) satisfies z.ZodType<Wire<RequestPayload<'session.models'>>>
 
 /** session.models response value. */
-export const sessionModelsValueSchema = z.object({
-  current: modelSelectionSchema,
+export const sessionModelsValueSchema = z.strictObject({
+  current: modelSelectionIntentSchema,
+  lastRoute: resolvedModelRouteSchema.optional(),
   routable: z.boolean(),
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.models'>>>
 
 /** session.selectModel request payload. */
-export const sessionSelectModelRequestSchema = z.object({
+export const sessionSelectModelRequestSchema = z.strictObject({
   sessionId: sessionIdSchema,
-  provider: z.string().min(1),
-  model: z.string().min(1),
-  reasoningEffort: z.string().min(1).optional(),
+  selection: modelSelectionIntentSchema,
 }) satisfies z.ZodType<Wire<RequestPayload<'session.selectModel'>>>
 
 /** session.selectModel response value. */
-export const sessionSelectModelValueSchema = z.object({
-  selected: modelSelectionSchema,
+export const sessionSelectModelValueSchema = z.strictObject({
+  selected: modelSelectionIntentSchema,
+  lastRoute: resolvedModelRouteSchema.optional(),
+  routable: z.boolean(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.selectModel'>>>
 
 /** ContentBlock passthrough: core is merge-extensible — the type discriminant envelope is strict, the rest stays wide. */

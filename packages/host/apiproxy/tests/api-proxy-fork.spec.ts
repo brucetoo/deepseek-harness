@@ -82,7 +82,7 @@ function liveAgent(
 }
 
 const api = (ctx: Context) => createApiProxy(ctx, {
-  defaultModelSelection: () => ({ provider: 'default-provider', model: 'default-model' }),
+  defaultModelSelection: () => ({ kind: 'model' as const, provider: 'default-provider', model: 'default-model' }),
   cwd: '/tmp',
 })
 
@@ -253,9 +253,10 @@ describe('sessions.fork', () => {
     await ctx.fiber.dispose()
   })
 
-  it('installs the latest logged model selection before the child can run', async () => {
+  it('inherits durable Auto intent independently from the latest physical route', async () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-routed', 1)
+    source.append('model/selection', { kind: 'auto', pool: 'default' })
     source.append('request/header', {
       header: {
         config: {
@@ -272,18 +273,11 @@ describe('sessions.fork', () => {
     const child = ctx.agents.get(response.result.value.sessionId)
     if (child === undefined) throw new Error('fork did not publish the child agent')
     const assembly = await child.ctx.systemPrompt.assemble()
-    expect(assembly.variables).toMatchObject({
-      provider: 'inherited-provider',
-      model: 'inherited-model',
-    })
+    expect(assembly.variables).toMatchObject({ provider: 'auto', model: 'auto' })
     const fallback: LlmCallConfig = { provider: 'default-provider', model: 'default-model' }
     await expect(agentEvents(child.ctx, child).waterfall(
       'agent/request', { turn: 1, step: 0, signal: new AbortController().signal }, () => Promise.resolve(fallback),
-    )).resolves.toMatchObject({
-      provider: 'inherited-provider',
-      model: 'inherited-model',
-      reasoningEffort: 'high',
-    })
+    )).resolves.toEqual(fallback)
     await ctx.fiber.dispose()
   })
 })

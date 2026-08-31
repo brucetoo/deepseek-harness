@@ -27,7 +27,7 @@ async function harness(): Promise<{ ctx: Context; api: ApiProxy }> {
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(ApprovalService)
-  const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+  const api = createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' })
   return { ctx, api }
 }
 
@@ -217,7 +217,7 @@ describe('approval pending registry', () => {
     await ctx.plugin(ApprovalService)
     let api!: ApiProxy
     const fiber = ctx.plugin(Object.assign((fiberCtx: Context) => {
-      api = createApiProxy(fiberCtx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+      api = createApiProxy(fiberCtx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' })
     }, { inject: ['sessions', 'agents', 'userQuestions', 'approval'] }))
     await fiber.await()
     const abort = new AbortController()

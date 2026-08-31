@@ -65,7 +65,7 @@ async function harness(withRegistry: boolean): Promise<{ ctx: Context; session: 
   return { ctx, session, agent }
 }
 
-const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 /** Drain the mux until `count` session/jobs frames arrived, then abort. */
 async function collect(

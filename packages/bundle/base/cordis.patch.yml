@@ -72,6 +72,9 @@
     - id: llm-retry
       name: '@deepseek-ai/dsh-llm-retry'
 
+    - id: llm-auto-router
+      name: '@deepseek-ai/dsh-llm-auto-router'
+
     # User-settings document (`$DSH_HOME/settings.yaml`, hot-reloaded): a
     # `llm-deepseek:` or `llm-pi-ai:` section there overrides the adapter entries
     # below without a restart, and is what the web Models page writes.

@@ -24,6 +24,10 @@ For a single-select question, `custom` overrides the selected choice and `select
 
 When a request carries an agent, `ask()` authenticates its exact identity through the live `AgentRegistry` and admits only a runtime root. Durable lineage is not authority: a session with historical delegation depth may ask after it is resumed as a new runtime root, while a live child owned by another agent is rejected even if its durable depth is zero. Agentless programmatic requests retain the existing provider path.
 
+### Observation event
+
+After a valid request enters the active provider, the service emits one `user-question/requested` event with the validated `AskUserQuestionRequest`. This event is a contained, non-durable observer seam for notifications and telemetry. Listeners cannot answer, cancel, or delay the request; thrown or rejected listeners are logged and cannot change the provider outcome. Requests rejected before provider entry do not emit it.
+
 ### Presentation intent
 
 `intent` declares that a question IS a known kind of decision, so a UI that recognises the tag may present it as such — `plan-review` says `detail` is a plan under review, and `dsh-plan-mode` sets it on the `exit_plan_mode` question. An intent changes presentation only: a UI honouring it answers with the same option labels a generic UI would send, and a UI that does not know the tag renders the generic option list, so callers read the same answer fields either way. `approve` names the label that approves rather than relying on option order. `ask()` rejects with `BAD_INTENT` the two assertions no type can carry: an `approve` naming none of that question's own options, and an intent on a question with no `detail` — the thing it declares itself a review of.

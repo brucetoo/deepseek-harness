@@ -113,7 +113,7 @@ async function buildApi(
   }
   if (services.sessions !== undefined) ctx.provide('sessions', services.sessions as never)
   return createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+    defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }),
     cwd: '/tmp',
     ...services.compressionLevel === undefined
       ? {}

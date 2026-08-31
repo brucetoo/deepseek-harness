@@ -6,15 +6,18 @@
  * either entry is what the other shows next.
  */
 import type {
-  IApiClient, ModelCatalogFailure, ModelProviderGroup, ModelSelection, SessionId, SessionModels,
+  IApiClient, ModelCatalogFailure, ModelProviderGroup, ModelSelectionIntent, ResolvedModelRoute,
+  SessionId, SessionModels,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
-  /** Model selection the host reports for the next assembled step; null before the first load. */
-  current: ModelSelection | null
+  /** Logical model selection the host reports for the next assembled step; null before the first load. */
+  current: ModelSelectionIntent | null
+  /** Latest physical request route; informational and never determines active selection. */
+  lastRoute: ResolvedModelRoute | null
   /**
    * Whether an adapter serves the current selection's provider, as the host reports
    * it — null before the first load, which is NOT the same as blocked. Read
@@ -37,7 +40,7 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    current: null, lastRoute: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
   })
 
   /** Latest operation wins; an older response never overwrites a newer one. */
@@ -73,9 +76,10 @@ export class ModelDirectory {
       this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
       throw new Error(`session.models failed: ${result.error.code}: ${result.error.message}`)
     }
-    const { current, routable, groups, failures } = result.value
+    const { current, lastRoute, routable, groups, failures } = result.value
     this.store.update((s) => {
       s.current = current
+      s.lastRoute = lastRoute ?? null
       s.routable = routable
       s.groups = groups
       s.failures = failures
@@ -89,19 +93,15 @@ export class ModelDirectory {
    * Select the complete provider/model/reasoning selection (both entries submit through here). Success
    * updates the shared current; failure surfaces on the store and throws so
    * each entry's own retry surface engages.
-   * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
+   * @param selection - Auto or a concrete provider/model intent with optional adapter-owned effort.
  */
-  async select(selection: ModelSelection): Promise<void> {
+  async select(selection: ModelSelectionIntent): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
     const { result } = await this.sessions.selectModel({
       sessionId: this.sessionId,
-      provider: selection.provider,
-      model: selection.model,
-      ...selection.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: selection.reasoningEffort },
+      selection,
     })
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -115,7 +115,8 @@ export class ModelDirectory {
     // landed is by construction one it can serve.
     this.store.update((s) => {
       s.current = result.value.selected
-      s.routable = true
+      s.lastRoute = result.value.lastRoute ?? null
+      s.routable = result.value.routable
       s.status = 'ready'
       s.error = null
     })
@@ -131,6 +132,7 @@ export class ModelDirectory {
     ++this.generation
     this.store.update((s) => {
       s.current = null
+      s.lastRoute = null
       s.routable = null
       s.groups = []
       s.failures = []

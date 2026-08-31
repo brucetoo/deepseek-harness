@@ -39,6 +39,43 @@ describe('UserQuestionService', () => {
     expect(p.seen).toEqual([{ questions: [{ id: 'confirm', question: 'Proceed?' }] }])
   })
 
+  it('notifies contained observers after a valid request enters the provider', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    let release!: (value: { answers: Array<{ id: string; selected: string[] }> }) => void
+    const providerAnswer = new Promise<{ answers: Array<{ id: string; selected: string[] }> }>((resolve) => {
+      release = resolve
+    })
+    const p = { ask: vi.fn(() => providerAnswer) }
+    ctx.userQuestions.registerProvider(p)
+    const request = { questions: [{ id: 'confirm', question: 'Proceed?' }] }
+    const observed: AskUserQuestionRequest[] = []
+    ctx.on('user-question/requested', (value) => {
+      observed.push(value)
+      throw new Error('notification transport failed')
+    })
+
+    const answer = ctx.userQuestions.ask(request)
+    await vi.waitFor(() => { expect(observed).toEqual([request]) })
+    release({ answers: [{ id: 'confirm', selected: ['yes'] }] })
+
+    await expect(answer).resolves.toEqual({ answers: [{ id: 'confirm', selected: ['yes'] }] })
+    expect(p.ask).toHaveBeenCalledWith(request)
+  })
+
+  it('does not notify for requests rejected before provider entry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const observed = vi.fn()
+    ctx.on('user-question/requested', observed)
+
+    await expect(ctx.userQuestions.ask({ questions: [] }))
+      .rejects.toMatchObject({ code: 'EMPTY_QUESTIONS' })
+    await expect(ctx.userQuestions.ask({ questions: [{ id: 'confirm', question: 'Proceed?' }] }))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+    expect(observed).not.toHaveBeenCalled()
+  })
+
   it('rejects ask requests when no provider is registered', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)

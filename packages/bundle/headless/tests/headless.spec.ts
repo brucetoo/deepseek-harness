@@ -108,6 +108,33 @@ async function bench(script: Script): Promise<{
 }
 
 describe('headless runner', () => {
+  it('uses the concrete composition fallback under an Auto user default', async () => {
+    const ctx = new Context()
+    let created: CreateAgentOptions | undefined
+    let exitCode: number | undefined
+    ctx.provide('agentDefaultModel', {
+      currentSelection: () => ({ kind: 'auto', pool: 'default' }),
+      compositionSelection: () => ({ kind: 'model', provider: 'p', model: 'm' }),
+    } as never)
+    ctx.provide('sessions', { flush: () => Promise.resolve(true) } as never)
+    ctx.provide('agents', {
+      create: (options: CreateAgentOptions) => {
+        created = options
+        return Promise.reject(new Error('stop after capture'))
+      },
+    } as never)
+    ctx.provide('appExit', (code: number) => { exitCode = code })
+    internals.stdout = { write: () => true }
+    internals.stderr = { write: () => true }
+
+    apply(ctx, { task: 't' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(created?.agentOptions).toEqual({ provider: 'p', model: 'm' })
+    expect(exitCode).toBe(1)
+    await ctx.fiber.dispose()
+  })
+
   it('aggregates the final text across the complete idle-to-idle interval and flushes before exit', async () => {
     const test = await bench({
       before(session) {
@@ -186,7 +213,10 @@ describe('headless runner', () => {
     const exited = new Promise<number>((resolve) => {
       ctx.provide('appExit', resolve)
     })
-    ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) } as never)
+    ctx.provide('agentDefaultModel', {
+      currentSelection: () => ({ kind: 'model', provider: 'p', model: 'm' }),
+      compositionSelection: () => ({ kind: 'model', provider: 'p', model: 'm' }),
+    } as never)
     ctx.provide('sessions', { flush: () => Promise.resolve(true) } as never)
     ctx.provide('agents', { create: () => Promise.reject(new Error('factory exploded')) } as never)
     apply(ctx, { task: 't' })
@@ -203,7 +233,10 @@ describe('headless runner', () => {
     const exited = new Promise<number>((resolve) => {
       ctx.provide('appExit', resolve)
     })
-    ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) } as never)
+    ctx.provide('agentDefaultModel', {
+      currentSelection: () => ({ kind: 'model', provider: 'p', model: 'm' }),
+      compositionSelection: () => ({ kind: 'model', provider: 'p', model: 'm' }),
+    } as never)
     ctx.provide('sessions', { flush: () => Promise.resolve(true) } as never)
     const rejected = {
       then(_resolve: (value: never) => void, reject: (reason: unknown) => void): void {

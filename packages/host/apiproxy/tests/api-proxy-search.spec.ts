@@ -27,7 +27,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 const sid = (value: string): SessionId => value as SessionId
-const defaults = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }
+const defaults = { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' }
 
 function request(query: string): RpcRequest<{ query: string }> {
   return { rpcId: RpcId(`search-${query}`), payload: { query } }

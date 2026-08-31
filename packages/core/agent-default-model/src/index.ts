@@ -6,7 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { ModelSelectionIntent } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 
@@ -20,8 +20,10 @@ declare module '@deepseek-ai/cordis' {
 /** Settings namespace carrying the default model selection for future Agents. */
 export const AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE = settingsNamespace('agent-default-model')
 
-/** Stored and composed default model selection. */
-export interface AgentDefaultModelSettings {
+/** Stored concrete default model selection. */
+export interface ConcreteAgentDefaultModelSettings {
+  /** Concrete-selection discriminant. */
+  kind: 'model'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -30,12 +32,27 @@ export interface AgentDefaultModelSettings {
   reasoningEffort?: string
 }
 
+/** Stored automatic default model selection. */
+export interface AutoAgentDefaultModelSettings {
+  /** Automatic-selection discriminant. */
+  kind: 'auto'
+  /** Optional router-owned candidate pool. */
+  pool?: string
+}
+
+/** Stored and composed default model-selection intent. */
+export type AgentDefaultModelSettings = ConcreteAgentDefaultModelSettings | AutoAgentDefaultModelSettings
+
 /** Schema of the default Agent model settings section. */
-export const AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA: z<AgentDefaultModelSettings> = z.object({
-  provider: z.string().required(),
-  model: z.string().required(),
-  reasoningEffort: z.string(),
-})
+export const AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA: z<AgentDefaultModelSettings> = z.union([
+  z.object({ kind: z.const('auto').required(), pool: z.string() }),
+  z.object({
+    kind: z.const('model').required(),
+    provider: z.string().required(),
+    model: z.string().required(),
+    reasoningEffort: z.string(),
+  }),
+])
 
 /** Composition entry for the default model selection. */
 export interface Config {
@@ -46,8 +63,10 @@ export interface Config {
 }
 
 /** Project stored settings onto the Agent-facing selection type. */
-function selection(settings: AgentDefaultModelSettings): ModelSelection {
+function selection(settings: AgentDefaultModelSettings): ModelSelectionIntent {
+  if (settings.kind === 'auto') return { kind: 'auto', ...settings.pool === undefined ? {} : { pool: settings.pool } }
   return {
+    kind: 'model',
     provider: settings.provider,
     model: settings.model,
     ...settings.reasoningEffort === undefined
@@ -68,10 +87,12 @@ export class AgentDefaultModelConfig extends Service {
   })
 
   private source: () => AgentDefaultModelSettings
+  private readonly entry: ConcreteAgentDefaultModelSettings
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
-    const entry: AgentDefaultModelSettings = { provider: config.provider, model: config.model }
+    const entry: ConcreteAgentDefaultModelSettings = { kind: 'model', provider: config.provider, model: config.model }
+    this.entry = entry
     this.source = () => entry
     installSettingsSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {
       setSource: (current) => { this.source = current },
@@ -83,10 +104,18 @@ export class AgentDefaultModelConfig extends Service {
 
   /**
    * Read the current default model selection.
-   * @returns a detached provider, model, and optional reasoning selection.
+   * @returns a detached logical model-selection intent.
    */
-  currentSelection(): ModelSelection {
+  currentSelection(): ModelSelectionIntent {
     return selection(this.source())
+  }
+
+  /**
+   * Read the deployment's concrete Agent creation fallback.
+   * @returns a detached concrete composition selection.
+   */
+  compositionSelection(): ModelSelectionIntent & { kind: 'model' } {
+    return selection(this.entry) as ModelSelectionIntent & { kind: 'model' }
   }
 
   /**
@@ -95,12 +124,18 @@ export class AgentDefaultModelConfig extends Service {
    * @param next - resolved selection accepted by an entry point.
    * @returns fulfillment after the optional settings write settles.
    */
-  async saveSelection(next: ModelSelection): Promise<void> {
-    await this.ctx.get('settings')?.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
-      provider: next.provider,
-      model: next.model,
-      ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
-    })
+  async saveSelection(next: ModelSelectionIntent): Promise<void> {
+    await this.ctx.get('settings')?.replace(
+      AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE,
+      next.kind === 'auto'
+        ? { kind: 'auto', ...next.pool === undefined ? {} : { pool: next.pool } }
+        : {
+          kind: 'model',
+          provider: next.provider,
+          model: next.model,
+          ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
+        },
+    )
   }
 }
 

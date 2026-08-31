@@ -34,6 +34,8 @@ const goalScenarioDir = join(snapshotsDir, 'goal-tools')
 const goalConfigPath = fileURLToPath(new URL('../goal.cordis.snapshot.yml', import.meta.url))
 const retryScenarioDir = join(snapshotsDir, 'provider-retry')
 const retryConfigPath = fileURLToPath(new URL('../retry.cordis.snapshot.yml', import.meta.url))
+const autoRouterScenarioDir = join(snapshotsDir, 'auto-router')
+const autoRouterConfigPath = fileURLToPath(new URL('../auto-router.cordis.snapshot.yml', import.meta.url))
 const compactionScenarioDir = join(snapshotsDir, 'compaction-recovery')
 const compactionSessionFixture = join(compactionScenarioDir, 'session.jsonl')
 const compactionStreamExpected = join(compactionScenarioDir, 'stream-json.expected.jsonl')
@@ -346,6 +348,72 @@ describe('headless stream-json snapshots', () => {
           delayMs: 1,
           failure: { message: 'snapshot transient failure', code: 'RATE_LIMIT', status: 429 },
         })
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('routes Auto through two physical attempts before commitment', async () => {
+    const prompt = await scenarioPrompt(autoRouterScenarioDir, 'auto-router')
+    const streamExpected = join(autoRouterScenarioDir, 'stream-json.expected.jsonl')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'automatic route failover headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-auto-router-',
+      binScript,
+      libBinScript: binScript,
+      configPath: autoRouterConfigPath,
+      binArgs: [autoRouterConfigPath, prompt],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: (cwd) => { runCwd = cwd },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const relevant = records.filter(record => [
+          'model/selection',
+          'request/header',
+          'llm/auto-route',
+          'llm/auto-failover',
+          'assistant/message',
+        ].includes(String(record.type)))
+        expect(relevant.map(record => record.type)).toEqual([
+          'model/selection',
+          'request/header',
+          'llm/auto-route',
+          'llm/auto-failover',
+          'request/header',
+          'llm/auto-route',
+          'assistant/message',
+        ])
+        expect(relevant[0]?.data).toEqual({ kind: 'auto' })
+        expect(relevant.filter(record => record.type === 'request/header').map((record) => {
+          const data = record.data as JsonObject
+          const header = data.header as JsonObject
+          return header.config
+        })).toMatchObject([
+          { provider: 'route-a', model: 'model-a' },
+          { provider: 'route-b', model: 'model-b' },
+        ])
+        expect(relevant.filter(record => record.type === 'llm/auto-route').map(record => record.data))
+          .toMatchObject([
+            { attempt: 1, provider: 'route-a', model: 'model-a', reason: 'normal' },
+            { attempt: 2, provider: 'route-b', model: 'model-b', reason: 'failover' },
+          ])
+        expect(relevant.find(record => record.type === 'llm/auto-failover')?.data)
+          .toMatchObject({ fromProvider: 'route-a', fromModel: 'model-a' })
+        expect(relevant.at(-1)?.data).toMatchObject({
+          message: { source: { provider: 'route-b', model: 'model-b' } },
+        })
+        expect(JSON.stringify(records)).not.toContain('"provider":"auto","model":"auto"')
       },
     })
 

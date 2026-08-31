@@ -1,0 +1,36 @@
+# Keyless automatic-routing composition for the headless stream-json snapshot.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: llm-deepseek
+        name: '@deepseek-ai/dsh-llm-deepseek'
+        disabled: true
+      - id: agent-spine
+        name: '@deepseek-ai/dsh-agent-spine-demo'
+        config:
+          agents:
+            - id: main
+              provider: route-a
+              model: model-a
+              cwd: !!js process.cwd()
+          workspaceContext: false
+          persona: |
+            You are headless-agent, a coding assistant powered by automatic model routing.
+      - insert:
+          - id: llm-auto-router
+            name: '@deepseek-ai/dsh-llm-auto-router'
+            config:
+              tokenSafetyReserve: 100
+              models:
+                route-a/model-a:
+                  pool: default
+                  concurrencyLimit: 1
+                  preferenceMultiplier: 0
+                route-b/model-b:
+                  pool: default
+                  concurrencyLimit: 1
+                  preferenceMultiplier: 1
+          - id: auto-router-snapshot-backend
+            name: './tests/fixtures/auto-router-snapshot-backend.mjs'

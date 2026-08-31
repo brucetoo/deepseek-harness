@@ -73,11 +73,14 @@ const REASONING: LlmModelReasoningInfo = {
   defaultEffort: ReasoningEffortId('high'),
 }
 
-async function harness(logged?: {
-  provider: string
-  model: string
-  reasoningEffort?: ReasoningEffortId
-}): Promise<{
+async function harness(options: {
+  selection?: import('@deepseek-ai/dsh-agent').ModelSelectionIntent
+  lastRoute?: {
+    provider: string
+    model: string
+    reasoningEffort?: ReasoningEffortId
+  }
+} = {}): Promise<{
   ctx: Context
   agent: Agent
   sessionId: SessionId
@@ -102,8 +105,9 @@ async function harness(logged?: {
     { provider: 'duplicate', id: 'same', name: 'Same Again' },
   ]))
   const session = ctx.sessions.create()
-  if (logged !== undefined) {
-    session.append('request/header', { header: { config: logged }, reason: 'initial' })
+  if (options.selection !== undefined) session.append('model/selection', options.selection)
+  if (options.lastRoute !== undefined) {
+    session.append('request/header', { header: { config: options.lastRoute }, reason: 'initial' })
   }
   const agent = {
     id: session.id,
@@ -130,6 +134,54 @@ function registerTextOnly(ctx: Context): void {
 }
 
 describe('Web session model selection', () => {
+  it('preflights an Auto image without replacing logical intent or pinning a route', async () => {
+    const { ctx, agent, sessionId } = await harness({
+      selection: { kind: 'auto', pool: 'vision' },
+    })
+    const preflight = vi.fn(() => Promise.resolve({
+      kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat',
+    }))
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    ctx.provide('attachments', Object.setPrototypeOf({
+      imageLimits: {
+        maxImageBytes: 4, maxImagesPerMessage: 1, maxMessageImageBytes: 4,
+        maxImagePixels: 4, maxImageDimension: 2000, mediaTypes: ['image/png'],
+      },
+      validateImage: () => Promise.resolve(),
+      saveImage: () => Promise.resolve({
+        attachmentId: 'att-auto', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      }),
+    }, AttachmentStore.prototype) as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' }),
+      autoRouter: {
+        validatePool: () => {},
+        routable: () => Promise.resolve(true),
+        preflight,
+      },
+      cwd: '/tmp',
+    })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }],
+    }))
+
+    expect(result.result.ok).toBe(true)
+    expect(preflight).toHaveBeenCalledWith(expect.objectContaining({
+      agent,
+      selection: { kind: 'auto', pool: 'vision' },
+      requiredModalities: ['image'],
+    }))
+    expect(agent.session.events.filter(event => event.type === 'model/selection').at(-1)?.data)
+      .toEqual({ kind: 'auto', pool: 'vision' })
+    expect(agent.session.events.some(event => event.type === 'request/header')).toBe(false)
+    expect(followup).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
   it('validates an ordered image batch before persisting any member', async () => {
     const { ctx, agent, sessionId } = await harness()
     const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
@@ -157,7 +209,7 @@ describe('Web session model selection', () => {
     const followup = vi.fn()
     Object.assign(agent, { followup })
     const api = createApiProxy(ctx, {
-      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
     })
 
@@ -203,7 +255,7 @@ describe('Web session model selection', () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)
     const api = createApiProxy(ctx, {
-      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
     })
     const image = {
@@ -214,22 +266,23 @@ describe('Web session model selection', () => {
       id: 'image-message', role: 'user', source: { kind: 'user' }, content: [image],
     } as never, { surfaceOp: 'append' })
     expect(expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'text-only', model: 'plain',
-    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+      sessionId, selection: { kind: 'model', provider: 'text-only', model: 'plain' },
+    }))).selected).toEqual({ kind: 'model', provider: 'text-only', model: 'plain' })
 
+    const shadowed = [...agent.session.surface.nodes]
     agent.session.append('user/message', {
       id: 'summary', role: 'user', source: { kind: 'plugin', plugin: 'compact' },
       content: [{ type: 'text', text: 'image summarized' }],
     } as never, {
-      surfaceOp: { op: 'replace', start: 0, end: agent.session.events.length - 1 },
-      sourceEventSeqs: agent.session.events.map(event => event.seq),
+      surfaceOp: { op: 'replace', start: shadowed[0] as number, end: shadowed.at(-1) as number },
+      sourceEventSeqs: shadowed,
     })
     ;(agent.inbox.nextTurn as UserMessage[]).push({
       id: 'pending-image', role: 'user', source: { kind: 'user' }, content: [image],
     } as never)
     expect(expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'text-only', model: 'plain',
-    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+      sessionId, selection: { kind: 'model', provider: 'text-only', model: 'plain' },
+    }))).selected).toEqual({ kind: 'model', provider: 'text-only', model: 'plain' })
     await ctx.fiber.dispose()
   })
 
@@ -241,7 +294,7 @@ describe('Web session model selection', () => {
     const readImage = vi.fn(() => Promise.resolve({ ref, data: Uint8Array.of(1, 2) }))
     ctx.provide('attachments', { readImage } as never)
     const api = createApiProxy(ctx, {
-      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
     })
     agent.session.append('agent/inbox/spliced', {
@@ -269,14 +322,16 @@ describe('Web session model selection', () => {
   })
   it('groups successful providers and leaves an unlisted current selection out of the catalog', async () => {
     const { ctx, sessionId } = await harness({
-      provider: 'deepseek-official',
-      model: 'private-preview',
-      reasoningEffort: ReasoningEffortId('max'),
+      selection: {
+        kind: 'model', provider: 'deepseek-official', model: 'private-preview',
+        reasoningEffort: ReasoningEffortId('max'),
+      },
     })
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
 
     const catalog = expectValue(await api.sessions.models(request({ sessionId })))
     expect(catalog.current).toEqual({
+      kind: 'model',
       provider: 'deepseek-official',
       model: 'private-preview',
       reasoningEffort: 'max',
@@ -308,25 +363,23 @@ describe('Web session model selection', () => {
 
   it('accepts an advisory-unlisted model, rejects an unavailable provider, and switches only after the next assembly', async () => {
     const { ctx, agent, sessionId } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
     const seed: LlmCallConfig = { provider: 'seed', model: 'seed', temperature: 0.2 }
     const signal = new AbortController().signal
 
     expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat' })
+      .toEqual({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' })
     expect((await ctx.systemPrompt.assemble()).variables)
       .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
 
     const selected = expectValue(await api.sessions.selectModel(request({
       sessionId,
-      provider: 'deepseek-official',
-      model: 'private-preview',
-      reasoningEffort: 'max',
+      selection: {
+        kind: 'model', provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'max',
+      },
     })))
     expect(selected.selected).toEqual({
-      provider: 'deepseek-official',
-      model: 'private-preview',
-      reasoningEffort: 'max',
+      kind: 'model', provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'max',
     })
     await expect(agentEvents(ctx, agent).waterfall(
       'agent/request', { turn: 1, step: 0, signal }, () => Promise.resolve(seed),
@@ -344,9 +397,9 @@ describe('Web session model selection', () => {
 
     const unsupported = await api.sessions.selectModel(request({
       sessionId,
-      provider: 'deepseek-official',
-      model: 'private-preview',
-      reasoningEffort: 'medium',
+      selection: {
+        kind: 'model', provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'medium',
+      },
     }))
     expect(unsupported.result).toMatchObject({
       ok: false,
@@ -358,8 +411,7 @@ describe('Web session model selection', () => {
 
     const rejected = await api.sessions.selectModel(request({
       sessionId,
-      provider: 'missing',
-      model: 'model',
+      selection: { kind: 'model', provider: 'missing', model: 'model' },
     }))
     expect(rejected.result).toEqual({
       ok: false,
@@ -370,88 +422,79 @@ describe('Web session model selection', () => {
       },
     })
     expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'max' })
+      .toEqual({ kind: 'model', provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'max' })
     await ctx.fiber.dispose()
   })
 
   it('reads the Agent default live for a session whose log names no selection', async () => {
     const { ctx, sessionId } = await harness()
-    let stored = { provider: 'deepseek-official', model: 'deepseek-chat' }
+    let stored = { kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => stored,
       cwd: '/tmp',
     })
 
     expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat' })
+      .toEqual({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' })
     // The default moving after the session exists still reaches it: New
     // Session reuses a blank session rather than minting another, so a seed
     // captured at creation would show the superseded model there.
-    stored = { provider: 'deepseek-official', model: 'deepseek-reasoner' }
+    stored = { kind: 'model', provider: 'deepseek-official', model: 'deepseek-reasoner' }
     expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+      .toEqual({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-reasoner' })
     expect(expectValue(await api.host.describe(request({}))))
       .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
     await ctx.fiber.dispose()
   })
 
-  it('keeps a session on its logged selection when the Agent default differs', async () => {
+  it('keeps durable Auto intent independent from the latest physical route', async () => {
     const { ctx, sessionId } = await harness({
-      provider: 'deepseek-official',
-      model: 'deepseek-chat',
+      selection: { kind: 'auto', pool: 'default' },
+      lastRoute: { provider: 'deepseek-official', model: 'deepseek-chat' },
     })
-    let stored = { provider: 'deepseek-official', model: 'deepseek-chat' }
+    let stored = { kind: 'model' as const, provider: 'deepseek-official', model: 'deepseek-chat' }
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => stored,
+      agentCreationModelSelection: () => ({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
     })
 
-    stored = { provider: 'duplicate', model: 'same' }
-    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat' })
+    stored = { kind: 'model', provider: 'duplicate', model: 'same' }
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      current: { kind: 'auto', pool: 'default' },
+      lastRoute: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
     await ctx.fiber.dispose()
   })
 
-  it('saves an accepted selection as the default and survives a storage failure', async () => {
-    const { ctx, sessionId } = await harness()
-    const saved: unknown[] = []
-    let reject = false
+  it('commits concrete selection only to the session log', async () => {
+    const { ctx, agent, sessionId } = await harness()
     const api = createApiProxy(ctx, {
-      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
-      saveDefaultModelSelection: (selection) => {
-        saved.push(selection)
-        return reject ? Promise.reject(new Error('read-only document')) : Promise.resolve()
-      },
+      defaultModelSelection: () => ({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
     })
 
-    expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max',
+    const accepted = expectValue(await api.sessions.selectModel(request({
+      sessionId,
+      selection: {
+        kind: 'model', provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max',
+      },
     })))
-    expect(saved).toEqual([
-      { provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max' },
-    ])
-
-    // A refused selection never becomes anyone's default.
-    await api.sessions.selectModel(request({ sessionId, provider: 'missing', model: 'model' }))
-    expect(saved).toHaveLength(1)
-
-    // Storage failing is not the selection failing: the switch already applies
-    // to this session, so the call still succeeds.
-    reject = true
-    const stillAccepted = expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
-    })))
-    expect(stillAccepted.selected).toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
-    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
+    expect(accepted.selected).toEqual({
+      kind: 'model', provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max',
+    })
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'model/selection',
+      data: accepted.selected,
+    })
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current).toEqual(accepted.selected)
     await ctx.fiber.dispose()
   })
 
   it('refuses a prompt no adapter can route, and reports it on the directory', async () => {
     const { ctx, sessionId } = await harness()
     const api = createApiProxy(ctx, {
-      defaultModelSelection: () => ({ provider: 'deleted-gateway', model: 'deleted-model' }),
+      defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deleted-gateway', model: 'deleted-model' }),
       cwd: '/tmp',
     })
 
@@ -469,7 +512,7 @@ describe('Web session model selection', () => {
     // An advisory-unlisted model on a live route is NOT this: the route
     // serves it, so the prompt goes through and nothing blocks.
     expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'deepseek-official', model: 'unlisted-but-served',
+      sessionId, selection: { kind: 'model', provider: 'deepseek-official', model: 'unlisted-but-served' },
     })))
     const catalog = expectValue(await api.sessions.models(request({ sessionId })))
     expect(catalog.routable).toBe(true)
@@ -483,7 +526,7 @@ describe('Web session model selection', () => {
     const api = createApiProxy(ctx, {
       // What a Models-page removal leaves behind: the settings document still
       // names the route the user last picked, and nothing serves it.
-      defaultModelSelection: () => ({ provider: 'deleted-gateway', model: 'deleted-model' }),
+      defaultModelSelection: () => ({ kind: 'model' as const, provider: 'deleted-gateway', model: 'deleted-model' }),
       cwd: '/tmp',
     })
 
@@ -491,7 +534,7 @@ describe('Web session model selection', () => {
     // Passed through rather than repaired: matching no group is precisely what
     // makes the composer seat prompt for a selection instead of naming a model
     // the deployment cannot reach.
-    expect(catalog.current).toEqual({ provider: 'deleted-gateway', model: 'deleted-model' })
+    expect(catalog.current).toEqual({ kind: 'model', provider: 'deleted-gateway', model: 'deleted-model' })
     expect(catalog.groups.flatMap(group => group.models.map(model => `${group.id}/${model.id}`)))
       .not.toContain('deleted-gateway/deleted-model')
     await ctx.fiber.dispose()

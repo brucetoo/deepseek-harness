@@ -44,13 +44,16 @@ function scriptedApi(overrides: {
         modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       }),
       models: r => ok(r, {
-        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        current: { kind: 'auto', pool: 'default' },
+        lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
         routable: true,
         groups: [],
         failures: [],
       }),
       selectModel: r => ok(r, {
-        selected: { provider: r.payload.provider, model: r.payload.model },
+        selected: r.payload.selection,
+        lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        routable: true,
       }),
       rename: r => ok(r, { title: 'renamed', seq: 0 }),
       fork: r => ok(r, { sessionId: sid('s-fork') }),

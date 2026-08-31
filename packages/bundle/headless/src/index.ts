@@ -104,6 +104,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   if (agents === undefined || defaultModel === undefined || sessions === undefined) return
 
   const selection = defaultModel.currentSelection()
+  const creationSelection = defaultModel.compositionSelection()
   // This bundle composes no preset roster, so the model-facing rows sit in the
   // host plane and the agent reads them from the global layer. A deployment
   // that DOES configure one has to join it here first
@@ -111,7 +112,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   const { agent } = await agents.create({
     sessionId: SessionId(`session-${randomUUID()}`),
     meta: { cwd: process.cwd() },
-    agentOptions: { provider: selection.provider, model: selection.model },
+    agentOptions: { provider: creationSelection.provider, model: creationSelection.model },
     setup: (agentCtx) => {
       const selected: ModelSelectionRef = { current: selection, assembled: undefined }
       installModelSelection(agentCtx, selected)

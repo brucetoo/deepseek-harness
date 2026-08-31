@@ -9,6 +9,7 @@ LLM（大语言模型）seam 及其提供方适配器。`llm` 包同时承担 Se
 | [`llm/`](llm/README.zh.md) | LLM 服务和共享流式词汇 | `ctx.llm` |
 | [`token-meter/`](token-meter/README.zh.md) | 可感知回放的 token 测量 | `ctx.tokenMeter` |
 | [`llm-retry/`](llm-retry/README.zh.md) | 提供方作用域的重试策略 | 监听 `agent/request-error` |
+| [`llm-auto-router/`](llm-auto-router/README.zh.md) | 可用性优先的自动路由策略 | `ctx.llmAutoRouter` 与 Agent 请求 listener |
 | [`llm-deepseek/`](llm-deepseek/README.zh.md) | 直接 DeepSeek 适配器 | 注册到 `ctx.llm` |
 | [`llm-modelhub/`](llm-modelhub/README.zh.md) | 可选 ByteDance ModelHub 适配器和组合包 | 注册到 `ctx.llm` |
 | [`llm-pi-ai/`](llm-pi-ai/README.zh.md) | 多提供方 pi-ai 适配器 | 注册到 `ctx.llm` |

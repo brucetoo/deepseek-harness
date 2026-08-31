@@ -15,6 +15,17 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     userQuestions: UserQuestionService
   }
+
+  interface Events {
+    /**
+     * A validated question request entered the active provider. Observers may
+     * notify external surfaces but cannot answer, cancel, or delay the request.
+     * Observer failures are contained and cannot change the provider outcome.
+     * @param request - Already validated request accepted by the active provider.
+     * @mode emit
+     */
+    'user-question/requested'(request: Readonly<AskUserQuestionRequest>): void
+  }
 }
 
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from './types.ts'
@@ -136,7 +147,11 @@ export class UserQuestionService extends Service {
     if (this.provider === undefined) {
       throw new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER')
     }
-    return this.provider.ask(request)
+    const answer = this.provider.ask(request)
+    void this.ctx.parallel('user-question/requested', request).catch((error: unknown) => {
+      this.ctx.logger.warn('user-question observer failed: %o', error)
+    })
+    return answer
   }
 }
 

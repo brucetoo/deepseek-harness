@@ -15,8 +15,8 @@ export const name = 'user-questions-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: the single provider slot is validated at registration and asks return
- * directly to their caller; the seam publishes no independent request/answer audit stream.
+ * No runtime invariant: the single provider slot and request admission are validated at their
+ * mutation boundaries; the observer event is non-durable, contained, and carries no answer state.
  */
 const install: InvariantInstaller = () => {}
 

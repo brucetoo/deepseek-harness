@@ -92,13 +92,36 @@ export type PromptContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
 
-/** Complete model selection for one session. */
-export interface ModelSelection {
+/** Concrete logical model selection for one session. */
+export interface ConcreteModelSelectionIntent {
+  /** Concrete-selection discriminant. */
+  kind: 'model'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
   model: string
   /** Adapter-owned reasoning effort; absence preserves adapter/provider default behavior. */
+  reasoningEffort?: string
+}
+
+/** Automatic logical model selection resolved independently for each request. */
+export interface AutoModelSelectionIntent {
+  /** Automatic-selection discriminant. */
+  kind: 'auto'
+  /** Optional router-owned candidate pool. */
+  pool?: string
+}
+
+/** Logical model selection retained independently from physical request routing. */
+export type ModelSelectionIntent = ConcreteModelSelectionIntent | AutoModelSelectionIntent
+
+/** Concrete provider/model provenance from the latest physical request. */
+export interface ResolvedModelRoute {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Physical request's reasoning effort when present. */
   reasoningEffort?: string
 }
 
@@ -154,15 +177,14 @@ export interface ModelCatalogFailure {
 
 /** Detached model-directory snapshot for one session. */
 export interface SessionModels {
-  /** Model selection for the session's next assembled step. */
-  current: ModelSelection
+  /** Logical selection for the session's next assembled step. */
+  current: ModelSelectionIntent
+  /** Latest physical request route; absent before the first request. */
+  lastRoute?: ResolvedModelRoute
   /**
-   * Whether an adapter currently serves `current.provider`, and therefore
-   * whether this session can start a turn at all. Deliberately NOT derivable
-   * from `groups`: catalog membership is advisory, so a route serving a model
-   * it stopped advertising is absent from the groups yet perfectly usable,
-   * while a route whose adapter is gone can serve nothing. A surface that
-   * blocks input must read this rather than the groups.
+   * Whether the logical selection can presently start a turn. Catalog
+   * membership remains advisory, so clients must read this field rather than
+   * derive availability from `groups`.
    */
   routable: boolean
   /** Successfully loaded provider groups. */
@@ -299,11 +321,9 @@ export interface SessionsApi {
    */
   selectModel(request: RpcRequest<{
     sessionId: SessionId
-    provider: string
-    model: string
-    reasoningEffort?: string
+    selection: ModelSelectionIntent
   }>):
-  Promise<RpcResponse<{ selected: ModelSelection }>>
+  Promise<RpcResponse<{ selected: ModelSelectionIntent; lastRoute?: ResolvedModelRoute; routable: boolean }>>
 
   /**
    * Renames a session: appends a `session/title` event with the `user`

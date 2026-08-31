@@ -41,17 +41,27 @@ async function boot(): Promise<{
 }
 
 describe('AgentDefaultModelConfig', () => {
+  it('keeps the concrete composition selection available under an Auto user default', async () => {
+    const bench = await boot()
+    await bench.defaultModel.saveSelection({ kind: 'auto', pool: 'fast' })
+    expect(bench.defaultModel.currentSelection()).toEqual({ kind: 'auto', pool: 'fast' })
+    expect(bench.defaultModel.compositionSelection()).toEqual({
+      kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash',
+    })
+    await bench.ctx.fiber.dispose()
+  })
+
   it('resolves the user layer over the composition entry', async () => {
     const bench = await boot()
     expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'deepseek-official', model: 'deepseek-v4-flash',
+      kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash',
     })
 
     await bench.defaultModel.saveSelection({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
+      kind: 'model', provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
     })
     expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: 'high',
+      kind: 'model', provider: 'acme-gateway', model: 'acme-large', reasoningEffort: 'high',
     })
     await bench.ctx.fiber.dispose()
   })
@@ -59,10 +69,10 @@ describe('AgentDefaultModelConfig', () => {
   it('clears a stored effort when the saved selection has none', async () => {
     const bench = await boot()
     await bench.defaultModel.saveSelection({
-      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
+      kind: 'model', provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
     })
-    await bench.defaultModel.saveSelection({ provider: 'acme-gateway', model: 'acme-plain' })
-    expect(bench.defaultModel.currentSelection()).toEqual({ provider: 'acme-gateway', model: 'acme-plain' })
+    await bench.defaultModel.saveSelection({ kind: 'model', provider: 'acme-gateway', model: 'acme-plain' })
+    expect(bench.defaultModel.currentSelection()).toEqual({ kind: 'model', provider: 'acme-gateway', model: 'acme-plain' })
     await bench.ctx.fiber.dispose()
   })
 
@@ -72,18 +82,20 @@ describe('AgentDefaultModelConfig', () => {
       model: 'deepseek-reasoner',
     })
     expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'deepseek-official', model: 'deepseek-reasoner',
+      kind: 'model', provider: 'deepseek-official', model: 'deepseek-reasoner',
     })
     await bench.ctx.fiber.dispose()
   })
 
   it('falls back to the composition entry when the settings provider detaches', async () => {
     const bench = await boot()
-    await bench.defaultModel.saveSelection({ provider: 'acme-gateway', model: 'acme-large' })
-    expect(bench.defaultModel.currentSelection().provider).toBe('acme-gateway')
+    await bench.defaultModel.saveSelection({ kind: 'model', provider: 'acme-gateway', model: 'acme-large' })
+    expect(bench.defaultModel.currentSelection()).toEqual({
+      kind: 'model', provider: 'acme-gateway', model: 'acme-large',
+    })
     await bench.settingsFiber.dispose()
     expect(bench.defaultModel.currentSelection()).toEqual({
-      provider: 'deepseek-official', model: 'deepseek-v4-flash',
+      kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash',
     })
     await bench.ctx.fiber.dispose()
   })
@@ -91,8 +103,8 @@ describe('AgentDefaultModelConfig', () => {
   it('keeps the composition entry when no settings provider is mounted', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
-    await ctx.agentDefaultModel.saveSelection({ provider: 'other', model: 'other' })
-    expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'p', model: 'm' })
+    await ctx.agentDefaultModel.saveSelection({ kind: 'model', provider: 'other', model: 'other' })
+    expect(ctx.agentDefaultModel.currentSelection()).toEqual({ kind: 'model', provider: 'p', model: 'm' })
     await ctx.fiber.dispose()
   })
 })

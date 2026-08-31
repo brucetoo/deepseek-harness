@@ -62,7 +62,8 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: {
             ok: true,
             value: {
-              current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+              current: { kind: 'auto', pool: 'default' },
+              lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
               routable: true,
               groups: [],
               failures: [],
@@ -76,13 +77,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: {
             ok: true,
             value: {
-              selected: {
-                provider: request.payload.provider,
-                model: request.payload.model,
-                ...request.payload.reasoningEffort === undefined
-                  ? {}
-                  : { reasoningEffort: request.payload.reasoningEffort },
-              },
+              selected: request.payload.selection,
+              lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+              routable: true,
             },
           },
         }
@@ -340,14 +337,15 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.sessions.models({ sessionId: 's' as never })).result.ok).toBe(true)
     const selected = await c.sessions.selectModel({
       sessionId: 's' as never,
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-flash',
-      reasoningEffort: 'max',
+      selection: {
+        kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max',
+      },
     })
     expect(selected.result).toMatchObject({
       ok: true,
       value: {
         selected: {
+          kind: 'model',
           provider: 'deepseek-official',
           model: 'deepseek-v4-flash',
           reasoningEffort: 'max',

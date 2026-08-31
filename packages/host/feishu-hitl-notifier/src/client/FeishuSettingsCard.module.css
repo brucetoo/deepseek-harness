@@ -1,0 +1,22 @@
+.card { list-style: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-3); }
+.header { width: 100%; border: 0; border-radius: 12px; background: transparent; color: var(--dsw-alias-label-primary); padding: 14px 16px; display: flex; justify-content: space-between; text-align: left; font: inherit; cursor: pointer; }
+.header span:first-child { display: grid; gap: 4px; }
+.header small { color: var(--dsw-alias-label-tertiary); }
+.header:focus-visible, .body :focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.badges { display: flex; gap: 6px; color: var(--dsw-alias-label-error); font-size: 12px; }
+.body { margin: 0 16px; padding: 14px 0; border-top: 1px solid var(--dsw-alias-border-l2); display: grid; gap: 12px; }
+.body label { display: grid; gap: 5px; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+.body input, .body select { min-height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); padding: 4px 8px; }
+.check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; }
+.check input { min-height: auto; }
+.body fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+.row { display: grid; grid-template-columns: minmax(0,.7fr) minmax(0,1.6fr) auto auto; gap: 8px; align-items: end; }
+.row label, .row input, .row select { min-width: 0; }
+.row input, .row select { box-sizing: border-box; width: 100%; }
+.row span { grid-column: 1 / -1; min-height: 18px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.body button { min-height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); padding: 5px 12px; }
+.body button:disabled, .body input:disabled, .body select:disabled { opacity: .45; }
+.warning { color: var(--dsw-alias-label-warning); font-size: 12px; }
+.error { color: var(--dsw-alias-label-error); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 12px; }
+@media (max-width: 680px) { .row { grid-template-columns: 1fr 1fr; } }

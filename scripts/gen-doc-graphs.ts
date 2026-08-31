@@ -296,6 +296,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'UI front ends provide the active human-answer provider; tool-ask-user pauses a tool call on the provider-neutral ask() promise.',
   },
   {
+    key: 'feishuHitlNotifier',
+    pkg: 'feishu-hitl-notifier',
+    title: 'Feishu HITL notifications',
+    mode: 'core',
+    note: 'Observes admitted user questions, sends bounded cards through the local feishu-cli, and exposes saved-recipient test delivery through its Remote namespace.',
+  },
+  {
     key: 'planMode',
     pkg: 'plan-mode',
     title: 'Plan collaboration state',
