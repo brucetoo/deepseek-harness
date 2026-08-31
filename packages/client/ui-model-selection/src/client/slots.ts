@@ -4,7 +4,7 @@
  * entry; this package only contributes the single occupant, so no SlotMap
  * merge lives here.
  */
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelectionIntent } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ModelDirectoryState } from './directory.ts'
 
@@ -17,9 +17,9 @@ export interface ModelSelectInjected {
   /** Refresh the advisory directory (fire-and-forget; errors land on the store). */
   load: () => void
   /**
-   * Select a complete provider/model/reasoning selection.
-   * @param selection - model selection and optional adapter-owned effort.
+   * Select a complete logical model intent.
+   * @param selection - Auto or a concrete model with optional adapter-owned effort.
    * @returns whether the host accepted the selection.
    */
-  select: (selection: ModelSelection) => Promise<boolean>
+  select: (selection: ModelSelectionIntent) => Promise<boolean>
 }

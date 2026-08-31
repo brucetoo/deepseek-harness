@@ -11,6 +11,8 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'command.description': '选择本会话使用的模型',
+  'auto.label': '自动',
+  'auto.description': '为每次请求选择可用模型',
   'option.loadError': '目录加载失败：{message}',
   'trigger.fallback': '选择模型',
   'trigger.selectAria': '选择模型',
@@ -35,6 +37,8 @@ export type ModelKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'command.description': 'Select the model for this conversation',
+  'auto.label': 'Auto',
+  'auto.description': 'Choose an available model for each request',
   'option.loadError': 'Catalog failed to load: {message}',
   'trigger.fallback': 'Select model',
   'trigger.selectAria': 'Select model',

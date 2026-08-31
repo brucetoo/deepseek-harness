@@ -32,6 +32,13 @@ describe('dsh-base bundle', () => {
     )
     expect(rows.length).toBeGreaterThan(50)
     expect(rows.some(row => row.id === 'agent-loop')).toBe(true)
+    expect(rows.filter(row => row.id === 'llm-auto-router')).toEqual([
+      { id: 'llm-auto-router', name: '@deepseek-ai/dsh-llm-auto-router' },
+    ])
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-llm-auto-router', 'workspace:^')
+    expect(rows.find(row => row.id === 'agent-default-model')).toMatchObject({
+      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })
     expect(rows.find(row => row.id === 'session-telemetry-otel')?.config?.['mode']).toEqual({
       __jsExpr: "process.env.DSH_TELEMETRY_MODE || 'DISABLED'",
     })

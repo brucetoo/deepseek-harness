@@ -10,7 +10,17 @@ import { dirname } from 'node:path'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type {
+  Agent, AgentOptions, AgentStatus, AutoModelSelection, ModelSelection,
+  ModelSelectionIntent, ModelSelectionRef,
+} from '@deepseek-ai/dsh-agent'
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Durable logical model-selection intent accepted by Host. */
+    'model/selection': ModelSelectionIntent
+  }
+}
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -573,23 +583,29 @@ function directoryError(error: unknown): RpcError {
   return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
 }
 
+/** Automatic-routing operations required by the Host model and image APIs. */
+export interface HostAutoRouter {
+  /** Reject an unknown named pool without requiring a currently healthy route. */
+  validatePool(pool?: string): void
+  /** Whether the pool has a route eligible for the requested modalities. */
+  routable(input: { agent: Agent; selection: AutoModelSelection; requiredModalities: readonly ('text' | 'image')[] }): Promise<boolean>
+  /** Resolve one admission candidate without pinning the later request route. */
+  preflight(input: {
+    agent: Agent
+    selection: AutoModelSelection
+    requiredModalities: readonly ('text' | 'image')[]
+    signal: AbortSignal
+  }): Promise<ModelSelection>
+}
+
 /** Resolved Agent model and project-directory defaults consumed by the API implementation. */
 export interface ApiProxyDefaults {
-  /**
-   * The model selection a session starts from when its own log names none. Read on
-   * every access rather than captured, so a default saved during this process
-   * reaches the sessions that have not run a turn yet.
-   */
-  defaultModelSelection: () => ModelSelection
-  /**
-   * Record a selection as the new default. Either absent, or a closure that
-   * may itself decline — the gateway plugin always passes one, and it no-ops
-   * when the deployment mounts no settings provider or when the write races
-   * service teardown. A switch then stays process-local. A rejection is
-   * reported and swallowed: the switch already applies to its own session,
-   * and undoing it because storage failed would be the worse outcome.
-   */
-  saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
+  /** Logical default used when the session log has no model selection. */
+  defaultModelSelection: () => ModelSelectionIntent
+  /** Concrete deployment fallback used only to create or resume an Agent. */
+  agentCreationModelSelection?: () => ModelSelection
+  /** Optional automatic-routing capability owned by the composed router. */
+  autoRouter?: HostAutoRouter
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
   /** Native open-with-default-application; injectable for carrier tests. */
@@ -1049,12 +1065,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
   const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
     ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
-  /** The seed model each create/resume declares; re-read so it never goes stale. */
+  /** The concrete seed each create/resume declares independently from logical intent. */
   const agentOptions = (): AgentOptions => {
-    const { provider, model } = defaults.defaultModelSelection()
-    return { provider, model }
+    const selected = defaults.agentCreationModelSelection?.() ?? defaults.defaultModelSelection()
+    if (selected.kind !== 'model') {
+      throw new Error('api-proxy: Auto default requires a concrete Agent creation fallback')
+    }
+    return { provider: selected.provider, model: selected.model }
   }
-  type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
+  type WebModelSelectionRef = ModelSelectionRef & { readonly current: ModelSelectionIntent }
   const selections = new WeakMap<Agent, WebModelSelectionRef>()
   /**
    * Serializes `agentPreset.select` per session. Two concurrent selects both
@@ -1080,39 +1099,20 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return result
   }
 
-  /**
-   * Install or return the session-local model selection that prompt assembly snapshots.
-   *
-   * Precedence, resolved on EVERY read rather than seeded once: a selection
-   * made in this process, else the session's own latest logged request/header,
-   * else the live Agent default. Re-reading keeps the two tiers exact in both
-   * directions: a session with a recorded request derives its selection from
-   * its log, while a blank session (New Session reuses one rather than minting
-   * another) reads any default saved after it was created. There is no create-time
-   * per-session override tier on this wire — if one returns (a create-options
-   * contribution), it must fold in between the selection and the log.
-   */
+  /** Read the latest durable logical selection without consulting physical headers. */
+  function durableSelection(agent: Agent): ModelSelectionIntent | undefined {
+    const event = agent.session.events.findLast((candidate): candidate is SessionEvent<'model/selection'> =>
+      candidate.type === 'model/selection')
+    return event === undefined ? undefined : { ...event.data }
+  }
+
+  /** Install or return the logical selection that prompt assembly snapshots. */
   function selectionFor(agent: Agent): WebModelSelectionRef {
     const installed = selections.get(agent)
     if (installed !== undefined) return installed
-    let picked: ModelSelection | undefined
     const selection: WebModelSelectionRef = {
-      get current(): ModelSelection {
-        if (picked !== undefined) return picked
-        // Incrementally folded by the session, so a per-step read costs
-        // O(new events) rather than a rescan.
-        const logged = agent.session.requestHeader()?.config
-        if (logged === undefined) return defaults.defaultModelSelection()
-        return {
-          provider: logged.provider,
-          model: logged.model,
-          ...logged.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: logged.reasoningEffort },
-        }
-      },
-      set current(next: ModelSelection) {
-        picked = next
+      get current(): ModelSelectionIntent {
+        return durableSelection(agent) ?? defaults.defaultModelSelection()
       },
       assembled: undefined,
     }
@@ -1779,6 +1779,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return llm === undefined || llm.listProviders().some(entry => entry.id === provider)
   }
 
+  /** Latest physical request provenance, independent from logical selection. */
+  function lastRouteFor(agent: Agent): ModelSelection | undefined {
+    const config = agent.session.requestHeader()?.config
+    if (config === undefined) return undefined
+    return {
+      kind: 'model',
+      provider: config.provider,
+      model: config.model,
+      ...config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort },
+    }
+  }
+
+  /** Project a concrete logical selection to untagged physical provenance. */
+  function physicalRoute(selection: ModelSelection): { provider: string; model: string; reasoningEffort?: string } {
+    return {
+      provider: selection.provider,
+      model: selection.model,
+      ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+    }
+  }
+
+  /** Current turn-start availability for either logical selection branch. */
+  async function selectionRoutable(agent: Agent, selection: ModelSelectionIntent): Promise<boolean> {
+    if (selection.kind === 'model') return routeServed(selection.provider)
+    return defaults.autoRouter?.routable({ agent, selection, requiredModalities: ['text'] }) ?? false
+  }
+
   /**
    * Resolve the addressed agent for a turn-starting method and refuse when no
    * adapter serves its current selection: a provider nothing serves cannot start a
@@ -1795,12 +1822,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     if ('error' in found) return { refused: err(request, found.error) }
     const agent = found.agent
     const selection = selectionFor(agent).current
-    if (!routeServed(selection.provider)) {
+    if (!await selectionRoutable(agent, selection)) {
+      const details = selection.kind === 'model'
+        ? { provider: selection.provider, model: selection.model }
+        : { provider: 'auto', model: selection.pool ?? 'default' }
       return {
         refused: err(request, {
           code: 'model-unavailable',
-          message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
-          details: { provider: selection.provider, model: selection.model },
+          message: selection.kind === 'model'
+            ? `no adapter serves provider "${selection.provider}"; select a model for this session`
+            : `automatic model pool "${selection.pool ?? 'default'}" has no eligible route`,
+          details,
         }),
       }
     }
@@ -2187,44 +2219,62 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if ('error' in found) return err(request, found.error)
         const current = selectionFor(found.agent).current
         const { groups, failures } = await buildModelCatalog(ctx)
-        const routable = routeServed(current.provider)
-        return ok(request, { current: { ...current }, routable, groups, failures })
+        const routable = await selectionRoutable(found.agent, current)
+        const lastRoute = lastRouteFor(found.agent)
+        return ok(request, {
+          current: { ...current },
+          ...lastRoute === undefined ? {} : { lastRoute: physicalRoute(lastRoute) },
+          routable,
+          groups,
+          failures,
+        })
       },
 
       async selectModel(request) {
-        const { sessionId, provider, model, reasoningEffort } = request.payload
+        const { sessionId, selection } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         return serializeImageAdmission(found.agent, async () => {
           try {
-            const resolved = await ctx.llm.resolveCallConfig({
-              provider,
-              model,
-              ...reasoningEffort === undefined
-                ? {}
-                : { reasoningEffort: ReasoningEffortId(reasoningEffort) },
+            let selected: ModelSelectionIntent
+            if (selection.kind === 'auto') {
+              if (defaults.autoRouter === undefined) {
+                throw new Error('automatic model routing is unavailable')
+              }
+              defaults.autoRouter.validatePool(selection.pool)
+              selected = { kind: 'auto', ...selection.pool === undefined ? {} : { pool: selection.pool } }
+            } else {
+              const resolved = await ctx.llm.resolveCallConfig({
+                provider: selection.provider,
+                model: selection.model,
+                ...selection.reasoningEffort === undefined
+                  ? {}
+                  : { reasoningEffort: ReasoningEffortId(selection.reasoningEffort) },
+              })
+              selected = {
+                kind: 'model',
+                provider: resolved.provider,
+                model: resolved.model,
+                ...resolved.reasoningEffort === undefined
+                  ? {}
+                  : { reasoningEffort: resolved.reasoningEffort },
+              }
+            }
+            found.agent.session.append('model/selection', selected)
+            const lastRoute = lastRouteFor(found.agent)
+            return ok(request, {
+              selected: { ...selected },
+              ...lastRoute === undefined ? {} : { lastRoute: physicalRoute(lastRoute) },
+              routable: await selectionRoutable(found.agent, selected),
             })
-            const selected: ModelSelection = {
-              provider: resolved.provider,
-              model: resolved.model,
-              ...resolved.reasoningEffort === undefined
-                ? {}
-                : { reasoningEffort: resolved.reasoningEffort },
-            }
-            selectionFor(found.agent).current = selected
-            try {
-              await defaults.saveDefaultModelSelection?.(selected)
-            } catch (error: unknown) {
-              ctx.logger.warn(
-                `api-proxy: the model switch applies to this session but was not saved as the default: ${String(error)}`,
-              )
-            }
-            return ok(request, { selected: { ...selected } })
           } catch (error: unknown) {
+            const details = selection.kind === 'model'
+              ? { provider: selection.provider, model: selection.model }
+              : { provider: 'auto', model: selection.pool ?? 'default' }
             return err(request, {
               code: 'model-unavailable',
               message: error instanceof Error ? error.message : String(error),
-              details: { provider, model },
+              details,
             })
           }
         })
@@ -2384,11 +2434,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           try {
             if (hasImage) {
               const current = selectionFor(agent).current
-              const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
+              let physical: ModelSelection
+              if (current.kind === 'auto') {
+                if (defaults.autoRouter === undefined) {
+                  throw new Error('automatic model routing is unavailable')
+                }
+                physical = await defaults.autoRouter.preflight({
+                  agent,
+                  selection: current,
+                  requiredModalities: ['image'],
+                  signal: new AbortController().signal,
+                })
+              } else {
+                const resolved = await ctx.llm.resolveCallConfig({
+                  provider: current.provider,
+                  model: current.model,
+                  ...current.reasoningEffort === undefined ? {} : { reasoningEffort: current.reasoningEffort },
+                })
+                physical = { kind: 'model', provider: resolved.provider, model: resolved.model }
+              }
+              const modelInfo = await ctx.llm.resolveModelInfo(physical.provider, physical.model)
               if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
                 return err(request, {
                   code: 'attachment-error',
-                  message: `Model "${current.model}" does not support image input.`,
+                  message: `Model "${physical.model}" does not support image input.`,
                   details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
                 })
               }
@@ -2823,7 +2892,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     host: {
       describe(request) {
         // TODO: version should read apps/cli's package.json; placeholder for now.
-        const selection = defaults.defaultModelSelection()
+        const selection = defaults.agentCreationModelSelection?.() ?? defaults.defaultModelSelection()
+        if (selection.kind !== 'model') {
+          throw new Error('api-proxy: Auto default requires a concrete Agent creation fallback')
+        }
         return Promise.resolve(ok(request, {
           version: '0.0.1',
           // Same source as session.create's fallback: the UI's default project

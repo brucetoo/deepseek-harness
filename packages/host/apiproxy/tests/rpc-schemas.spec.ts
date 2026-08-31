@@ -205,7 +205,8 @@ describe('sessions domain schemas', () => {
     }).hasMore).toBe(false)
     expect(sessionModelsRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
     expect(sessionModelsValueSchema.parse({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+      current: { kind: 'auto', pool: 'default' },
+      lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
       routable: true,
       groups: [{
         id: 'deepseek-official',
@@ -227,23 +228,54 @@ describe('sessions domain schemas', () => {
     }).groups[0]?.models[0]?.id).toBe('deepseek-v4-flash')
     expect(sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-pro',
-      reasoningEffort: 'max',
-    }).reasoningEffort).toBe('max')
+      selection: {
+        kind: 'model',
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-pro',
+        reasoningEffort: 'max',
+      },
+    }).selection).toMatchObject({ kind: 'model', reasoningEffort: 'max' })
     expect(sessionSelectModelValueSchema.parse({
-      selected: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
-    }).selected.reasoningEffort).toBe('max')
+      selected: { kind: 'auto', pool: 'default' },
+      lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      routable: true,
+    }).selected).toEqual({ kind: 'auto', pool: 'default' })
     expect(() => sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
-      provider: '',
-      model: 'm',
+      selection: { kind: 'model', provider: '', model: 'm' },
     })).toThrow()
     expect(() => sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
-      provider: 'deepseek-official',
-      model: 'm',
-      reasoningEffort: '',
+      selection: { kind: 'model', provider: 'deepseek-official', model: 'm', reasoningEffort: '' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'auto', provider: 'deepseek-official' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'auto', pool: '' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'auto', reasoningEffort: 'high' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'model', provider: 'deepseek-official', model: '' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'model', provider: 'deepseek-official', model: 'm', extra: true },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'other' },
+    })).toThrow()
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1',
+      selection: { kind: 'auto' },
+      extra: true,
     })).toThrow()
     expect(() => sessionModelsValueSchema.parse({
       current: { provider: 'deepseek-official', model: 'm' },

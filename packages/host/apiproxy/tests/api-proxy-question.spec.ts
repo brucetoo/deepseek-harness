@@ -14,7 +14,7 @@ async function harness(): Promise<{ ctx: Context; api: ApiProxy }> {
   await ctx.plugin(UserQuestionService)
   return {
     ctx,
-    api: createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),
+    api: createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' }),
   }
 }
 

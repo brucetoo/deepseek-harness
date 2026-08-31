@@ -12,7 +12,7 @@
  * history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
-import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
+
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { CommandUiContract, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
@@ -20,10 +20,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ModelSelectionIntent, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from './directory.ts'
 import { ModelDirectoryResolver } from './service.ts'
 import type { ModelSelectInjected } from './slots.ts'
 import { ModelSelect } from './ModelSelect.tsx'
+import { concreteSelection } from './concrete-selection.ts'
 import { en, zh, type ModelKey } from './locales.ts'
 
 export { ModelDirectory } from './directory.ts'
@@ -45,15 +47,24 @@ function rowId(providerId: string, modelId: string): string {
 }
 
 /** Flatten the directory into popup rows; failure rows are listed for visibility but never selectable. */
+const AUTO_ROW_ID = 'virtual/auto'
+
 function optionsOf(directory: SessionModels, t: TranslateNS<'model'>): SelectOption[] {
-  const rows: SelectOption[] = []
+  const rows: SelectOption[] = [{
+    id: AUTO_ROW_ID,
+    label: t('auto.label'),
+    detail: t('auto.description'),
+    ...directory.current.kind === 'auto' ? { active: true } : {},
+  }]
   for (const group of directory.groups) {
     for (const model of group.models) {
       rows.push({
         id: rowId(group.id, model.id),
         label: model.name,
         detail: model.description !== undefined ? `${group.name} · ${model.description}` : group.name,
-        ...(directory.current.provider === group.id && directory.current.model === model.id
+        ...(directory.current.kind === 'model'
+          && directory.current.provider === group.id
+          && directory.current.model === model.id
           ? { active: true } : {}),
       })
     }
@@ -75,19 +86,12 @@ function optionsOf(directory: SessionModels, t: TranslateNS<'model'>): SelectOpt
  * @param id - the picked row id.
  * @returns the row's model selection, or undefined for failure rows / stale ids.
  */
-function selectionOf(state: ModelDirectoryState, id: string): ModelSelection | undefined {
+function selectionOf(state: ModelDirectoryState, id: string): ModelSelectionIntent | undefined {
+  if (id === AUTO_ROW_ID) return { kind: 'auto' }
   for (const group of state.groups) {
     for (const model of group.models) {
       if (rowId(group.id, model.id) !== id) continue
-      const sameRoute = state.current?.provider === group.id && state.current.model === model.id
-      const reasoningEffort = sameRoute
-        ? state.current?.reasoningEffort ?? model.reasoning?.defaultEffort
-        : model.reasoning?.defaultEffort
-      return {
-        provider: group.id,
-        model: model.id,
-        ...reasoningEffort === undefined ? {} : { reasoningEffort },
-      }
+      return concreteSelection(state.current, group.id, model)
     }
   }
   return undefined
@@ -166,7 +170,7 @@ export function apply(ctx: ClientContext): void {
           load: () => {
             if (available) directory.load().catch(() => { /* surfaced on the store */ })
           },
-          select: (selection: ModelSelection) => available
+          select: (selection: ModelSelectionIntent) => available
             ? directory.select(selection).then(() => true, () => false)
             : Promise.resolve(false),
         }

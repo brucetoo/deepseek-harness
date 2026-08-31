@@ -141,6 +141,24 @@ class UserQuestionError extends HarnessError {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxfeishuhitlnotifier--feishuhitlnotifier"></a>
+
+### `ctx.feishuHitlNotifier` — `FeishuHitlNotifier`
+
+Observes admitted user questions and sends bounded Feishu notification cards.
+
+```ts cordis-catalog
+/**
+ * Send a fixed privacy-safe card to one currently configured recipient.
+ *
+ * @param request - identity of a recipient already present in saved settings.
+ * @returns a sanitized delivery status without process output or recipient details.
+ */
+@Remote('testRecipient') async testRecipient(request: Recipient): Promise<RecipientTestResult>
+```
+
+Source: [`packages/host/feishu-hitl-notifier/src/index.ts`](../../packages/host/feishu-hitl-notifier/src/index.ts)
+
 <a id="ctxuserquestions--userquestionservice"></a>
 
 ### `ctx.userQuestions` — `UserQuestionService`
@@ -172,6 +190,29 @@ registerProvider(provider: UserQuestionProvider): () => void
  *   when that live agent is owned by another agent.
  */
 async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
+```
+
+Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)
+
+<a id="user-question-events"></a>
+
+### `user-question/*` events
+
+<a id="user-questionrequested--emit"></a>
+
+#### `user-question/requested` — emit
+
+A validated question request entered the active provider. Observers may notify external surfaces but cannot answer, cancel, or delay the request. Observer failures are contained and cannot change the provider outcome.
+
+```ts cordis-catalog
+/**
+ * A validated question request entered the active provider. Observers may
+ * notify external surfaces but cannot answer, cancel, or delay the request.
+ * Observer failures are contained and cannot change the provider outcome.
+ * @param request - Already validated request accepted by the active provider.
+ * @mode emit
+ */
+'user-question/requested'(request: Readonly<AskUserQuestionRequest>): void
 ```
 
 Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)

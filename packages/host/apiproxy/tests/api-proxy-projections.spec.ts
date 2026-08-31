@@ -84,7 +84,7 @@ function seedMessages(session: Session, count: number): void {
   }
 }
 
-const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('session.history projections block', () => {
   it('serves the unit value on the tail page with asOfSeq = last event seq', async () => {
@@ -220,7 +220,7 @@ describe('session.history projections block', () => {
     const { ctx, session } = await harness(true)
     expect('sessionListMetadata' in ctx.sessionProjections.snapshot(session).values).toBe(false)
     const fiber = ctx.plugin(Object.assign((gatewayCtx: Context) => {
-      createApiProxy(gatewayCtx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+      createApiProxy(gatewayCtx, { defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp' })
     }, { inject: ['sessions', 'agents', 'userQuestions', 'sessionProjections'] }))
     await fiber.await()
     await vi.waitFor(() => {

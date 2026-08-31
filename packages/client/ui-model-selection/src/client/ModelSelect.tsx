@@ -16,7 +16,7 @@ import {
   type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
-import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelReasoningEffort, ModelSelectionIntent } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconWarningOutline16, Toast,
@@ -24,6 +24,7 @@ import {
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
+import { concreteSelection } from './concrete-selection.ts'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
@@ -68,20 +69,17 @@ export function ModelSelect(
     group.models.map(model => ({
       group,
       model,
-      selection: {
-        provider: group.id,
-        model: model.id,
-        ...model.reasoning?.defaultEffort === undefined
-          ? {}
-          : { reasoningEffort: model.reasoning.defaultEffort },
-      } satisfies ModelSelection,
-    }))), [state.groups])
-  const selectedIndex = state.current === null
+      selection: concreteSelection(state.current, group.id, model),
+    }))), [state.current, state.groups])
+  const currentModel = state.current?.kind === 'model' ? state.current : undefined
+  const selectedIndex = currentModel === undefined
     ? -1
-    : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
+    : choices.findIndex(c => c.selection.provider === currentModel.provider && c.selection.model === currentModel.model)
   const currentChoice = choices[selectedIndex]
-  const reasoning = currentChoice?.model.reasoning
-  const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
+  const reasoning = state.current?.kind === 'model' ? currentChoice?.model.reasoning : undefined
+  const effectiveEffort = state.current?.kind === 'model'
+    ? state.current.reasoningEffort ?? reasoning?.defaultEffort
+    : undefined
   const effortLabel = reasoning === undefined
     ? undefined
     : effectiveEffort === undefined
@@ -178,8 +176,13 @@ export function ModelSelect(
     }
   }
 
-  const choose = (selection: ModelSelection): void => {
-    if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+  const choose = (selection: ModelSelectionIntent): void => {
+    const same = selection.kind === 'auto'
+      ? state.current?.kind === 'auto'
+      : state.current?.kind === 'model'
+        && state.current.provider === selection.provider
+        && state.current.model === selection.model
+    if (same) {
       close(true)
       return
     }
@@ -188,12 +191,13 @@ export function ModelSelect(
   }
 
   const chooseEffort = (effort: string | undefined): void => {
-    if (state.current === null) return
+    if (state.current?.kind !== 'model') return
     if (effectiveEffort === effort) {
       close(true)
       return
     }
-    const selection: ModelSelection = {
+    const selection: ModelSelectionIntent = {
+      kind: 'model',
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
@@ -202,13 +206,16 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
-  const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
+  const auto = state.current?.kind === 'auto'
+  const modelLabel = auto ? t('auto.label') : currentChoice?.model.name ?? t('trigger.fallback')
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
-  const triggerAria = currentChoice === undefined
-    ? t('trigger.selectAria')
-    : effortLabel === undefined
-      ? t('trigger.aria', { model: modelLabel })
-      : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
+  const triggerAria = auto
+    ? t('trigger.aria', { model: modelLabel })
+    : currentChoice === undefined
+      ? t('trigger.selectAria')
+      : effortLabel === undefined
+        ? t('trigger.aria', { model: modelLabel })
+        : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
   itemRefs.current = []
   let itemIndex = 0
   const itemRef = () => {
@@ -284,13 +291,30 @@ export function ModelSelect(
                 </div>
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
+                <button
+                  ref={itemRef()}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={auto}
+                  className={clsx(css.option, auto && css.selected)}
+                  disabled={busy}
+                  onClick={() => { choose({ kind: 'auto' }) }}
+                >
+                  <span className={css.optionCopy}>
+                    <span className={css.modelName}>{t('auto.label')}</span>
+                    <span className={css.description}>{t('auto.description')}</span>
+                  </span>
+                  <span className={css.check}>{auto ? <IconCheckOutline16 /> : null}</span>
+                </button>
                 {state.groups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
                       <div className={css.groupTitle} id={headingId}>{group.name}</div>
                       {group.models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
+                        const selected = state.current?.kind === 'model'
+                          && state.current.provider === group.id
+                          && state.current.model === model.id
                         return (
                           <button
                             ref={itemRef()}
@@ -301,7 +325,7 @@ export function ModelSelect(
                             key={model.id}
                             title={model.name}
                             disabled={busy}
-                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
+                            onClick={() => { choose(concreteSelection(state.current, group.id, model)) }}
                           >
                             <span className={css.optionCopy}>
                               <span className={css.modelName}>{model.name}</span>

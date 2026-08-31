@@ -6,8 +6,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { LlmCallConfig, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
-/** Complete provider, model, and optional reasoning effort selected for one live Agent. */
+import type { Agent } from './runtime-types.ts'
+
+/** Complete concrete provider, model, and optional reasoning effort selected for one live Agent. */
 export interface ModelSelection {
+  /** Concrete-selection discriminant. */
+  kind: 'model'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -16,12 +20,40 @@ export interface ModelSelection {
   reasoningEffort?: ReasoningEffortId
 }
 
-/** Mutable model selection plus the value captured for the current step. */
+/** Logical automatic model selection resolved by a request-routing plugin. */
+export interface AutoModelSelection {
+  /** Automatic-selection discriminant. */
+  kind: 'auto'
+  /** Optional router-owned candidate pool. */
+  pool?: string
+}
+
+/** Logical model choice retained independently from physical request routing. */
+export type ModelSelectionIntent = ModelSelection | AutoModelSelection
+
+/** Mutable model-selection intent plus the value captured for the current step. */
 export interface ModelSelectionRef {
-  /** Model selected for the next step that enters prompt assembly. */
-  current: ModelSelection | undefined
-  /** Selection captured when the current step entered prompt assembly. */
-  assembled: ModelSelection | undefined
+  /** Intent selected for the next step that enters prompt assembly. */
+  current: ModelSelectionIntent | undefined
+  /** Intent captured when the current step entered prompt assembly. */
+  assembled: ModelSelectionIntent | undefined
+}
+
+interface AssembledIntentEntry {
+  owner: object
+  intent: ModelSelectionIntent
+}
+
+const assembledIntents = new WeakMap<Agent, AssembledIntentEntry>()
+
+/**
+ * Read the model-selection intent captured by the latest prompt assembly.
+ * @param agent - Agent whose process-local assembled intent is requested.
+ * @returns a detached intent snapshot, or `undefined` when none is installed and assembled.
+ */
+export function assembledModelSelectionIntent(agent: Agent): ModelSelectionIntent | undefined {
+  const entry = assembledIntents.get(agent)
+  return entry === undefined ? undefined : { ...entry.intent }
 }
 
 /**
@@ -37,17 +69,31 @@ export interface ModelSelectionRef {
  * @returns Disposer for both scoped waterfall listeners.
  */
 export function installModelSelection(agentCtx: Context, selection: ModelSelectionRef): () => void {
+  const agent = agentCtx.agent
+  let active = true
+  let lifecycleGeneration = 0
   const disposeAssembly = agentCtx.on('system-prompt/assemble', async (_assembly, _context, next) => {
     const selected = selection.current
+    const assemblyGeneration = lifecycleGeneration
     const assembled = await next()
-    selection.assembled = selected
+    if (!active || assemblyGeneration !== lifecycleGeneration) return assembled
+    selection.assembled = selected === undefined ? undefined : { ...selected }
+    if (agent !== undefined) {
+      if (selection.assembled === undefined) {
+        if (assembledIntents.get(agent)?.owner === selection) assembledIntents.delete(agent)
+      } else {
+        assembledIntents.set(agent, { owner: selection, intent: selection.assembled })
+      }
+    }
     if (selected === undefined) return assembled
+    const logical = selected.kind === 'auto'
+      ? { provider: 'auto', model: 'auto' }
+      : { provider: selected.provider, model: selected.model }
     return {
       ...assembled,
       variables: {
         ...assembled.variables,
-        provider: selected.provider,
-        model: selected.model,
+        ...logical,
       },
     }
   })
@@ -56,7 +102,7 @@ export function installModelSelection(agentCtx: Context, selection: ModelSelecti
     async (_payload, next): Promise<LlmCallConfig> => {
       const resolved = await next()
       const selected = selection.assembled
-      if (selected === undefined) return resolved
+      if (selected === undefined || selected.kind === 'auto') return resolved
       const { reasoningEffort: _inheritedEffort, ...withoutInheritedEffort } = resolved
       return {
         ...withoutInheritedEffort,
@@ -69,7 +115,12 @@ export function installModelSelection(agentCtx: Context, selection: ModelSelecti
     },
   )
   return () => {
+    if (!active) return
+    active = false
+    lifecycleGeneration += 1
     disposeAssembly()
     disposeRequest()
+    selection.assembled = undefined
+    if (agent !== undefined && assembledIntents.get(agent)?.owner === selection) assembledIntents.delete(agent)
   }
 }

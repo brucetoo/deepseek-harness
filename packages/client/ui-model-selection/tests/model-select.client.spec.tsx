@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelectionIntent } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
@@ -31,7 +31,8 @@ const reasoning = {
 
 function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
-    current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    current: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
     groups: [{
       id: 'deepseek-official',
@@ -50,7 +51,7 @@ afterEach(cleanup)
 describe('ModelSelect reasoning effort', () => {
   it('renders adapter metadata and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
-    const select = vi.fn(async (selection: ModelSelection) => {
+    const select = vi.fn(async (selection: ModelSelectionIntent) => {
       directory.set(state({ current: selection }))
       return true
     })
@@ -74,6 +75,7 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
     await waitFor(() => {
       expect(select).toHaveBeenCalledWith({
+        kind: 'model',
         provider: 'deepseek-official',
         model: 'deepseek-v4-flash',
         reasoningEffort: 'max',
@@ -93,7 +95,8 @@ describe('ModelSelect reasoning effort', () => {
           reasoning: { efforts: [{ id: 'standard', name: 'Standard' }] },
         }],
       }],
-      current: { provider: 'provider', model: 'model' },
+      current: { kind: 'model', provider: 'provider', model: 'model' },
+      lastRoute: { provider: 'provider', model: 'model' },
     }))
     render(<ModelSelect
       locked={false}
@@ -114,7 +117,8 @@ describe('ModelSelect reasoning effort', () => {
 
   it('prompts for a selection when the current model is no longer advertised', () => {
     const directory = createSnapshotStore(state({
-      current: { provider: 'deepseek-official', model: 'removed-model' },
+      current: { kind: 'model', provider: 'deepseek-official', model: 'removed-model' },
+      lastRoute: { provider: 'deepseek-official', model: 'removed-model' },
     }))
     const select = vi.fn().mockResolvedValue(true)
     render(<ModelSelect
@@ -133,6 +137,48 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     expect(screen.queryByText('removed-model')).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
+  })
+
+  it('shows one top-level Auto row, keeps the last route informational, and hides effort', async () => {
+    const directory = createSnapshotStore(state({
+      current: { kind: 'auto' },
+      lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+    }))
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={select}
+      t={t}
+    />)
+
+    const trigger = screen.getByRole('button', { name: '选择模型，当前 自动' })
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    const rows = screen.getAllByRole('menuitemradio')
+    expect(rows.map(row => row.textContent)).toEqual(['自动为每次请求选择可用模型', 'DeepSeek-V4-Flash'])
+    expect(rows[0]?.getAttribute('aria-checked')).toBe('true')
+    expect(rows[1]?.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('submits Auto and concrete rows as discriminated intents', async () => {
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state())}
+      load={vi.fn()}
+      select={select}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^自动/ }))
+    await waitFor(() => { expect(select).toHaveBeenCalledWith({ kind: 'auto' }) })
   })
 
   it('announces a rejected selection as a transient toast and keeps the in-menu strip for loads', async () => {

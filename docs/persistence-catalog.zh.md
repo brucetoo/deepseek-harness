@@ -478,6 +478,46 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `llm/*`
 
+<a id="llmauto-failover--log-only"></a>
+
+#### `llm/auto-failover` — log-only
+
+```ts persistence-catalog
+/** Failed uncommitted physical attempt that authorized routing to another model. */
+'llm/auto-failover': {
+  attemptId: import('./brand.ts').AutoRouteAttemptId
+  turn: number
+  step: number
+  attempt: number
+  fromProvider: string
+  fromModel: string
+  failureCode: string
+}
+```
+
+来源：[`packages/llm/llm-auto-router/src/types.ts:23`](../packages/llm/llm-auto-router/src/types.ts)
+
+<a id="llmauto-route--log-only"></a>
+
+#### `llm/auto-route` — log-only
+
+```ts persistence-catalog
+/** Physical provider/model selected for one automatic request attempt. */
+'llm/auto-route': {
+  attemptId: import('./brand.ts').AutoRouteAttemptId
+  turn: number
+  step: number
+  attempt: number
+  pool: string
+  provider: string
+  model: string
+  candidateCount: number
+  reason: 'normal' | 'probe' | 'failover'
+}
+```
+
+来源：[`packages/llm/llm-auto-router/src/types.ts:11`](../packages/llm/llm-auto-router/src/types.ts)
+
 <a id="llmretry--log-only"></a>
 
 #### `llm/retry` — log-only
@@ -499,6 +539,19 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+### `model/*`
+
+<a id="modelselection--log-only"></a>
+
+#### `model/selection` — log-only
+
+```ts persistence-catalog
+/** Durable logical model-selection intent accepted by Host. */
+'model/selection': ModelSelectionIntent
+```
+
+来源：[`packages/host/apiproxy/src/api-proxy.ts:21`](../packages/host/apiproxy/src/api-proxy.ts)
 
 ### `permission/*`
 

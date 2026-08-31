@@ -2,7 +2,7 @@
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
 import type {
-  HostFrame, IApiClient, ModelSelection, MuxFrame,
+  HostFrame, IApiClient, ModelSelectionIntent, MuxFrame, ResolvedModelRoute,
   RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry, WorkspaceId,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
@@ -49,22 +49,18 @@ export class FakeApiClient implements IApiClient {
   onRename: (payload: unknown) => Promise<RpcResponse<{ title: string; seq: number }>> = () => Promise.resolve(ok({ title: 'fk-renamed', seq: 0 }))
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
   onHistory: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number })
-  => Promise<RpcResponse<{ events: never[]; hasMore: boolean; modelSelection: ModelSelection }>> =
-    () => Promise.resolve(ok({
-      events: [],
-      hasMore: false,
-      modelSelection: { provider: 'deepseek-official', model: 'deepseek-chat' },
-    }))
+  => Promise<RpcResponse<{ events: never[]; hasMore: boolean }>> =
+    () => Promise.resolve(ok({ events: [], hasMore: false }))
 
   onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
-    current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    current: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-chat' },
     routable: true,
     groups: [],
     failures: [],
   }))
-  onSelectModel: (payload: ModelSelection & { sessionId: SessionId })
-  => Promise<RpcResponse<{ selected: ModelSelection }>> =
-    payload => Promise.resolve(ok({ selected: { provider: payload.provider, model: payload.model } }))
+  onSelectModel: (payload: { sessionId: SessionId; selection: ModelSelectionIntent })
+  => Promise<RpcResponse<{ selected: ModelSelectionIntent; lastRoute?: ResolvedModelRoute; routable: boolean }>> =
+    payload => Promise.resolve(ok({ selected: payload.selection, routable: true }))
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
@@ -114,7 +110,7 @@ export class FakeApiClient implements IApiClient {
     history: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number }) =>
       this.record('session.history', payload, this.onHistory(payload)),
     models: (payload: unknown) => this.record('session.models', payload, this.onModels(payload)),
-    selectModel: (payload: ModelSelection & { sessionId: SessionId }) =>
+    selectModel: (payload: { sessionId: SessionId; selection: ModelSelectionIntent }) =>
       this.record('session.selectModel', payload, this.onSelectModel(payload)),
     rename: (payload: unknown) => this.record('session.rename', payload, this.onRename(payload)),
     fork: (payload: unknown) => this.record('session.fork', payload, this.onFork(payload)),

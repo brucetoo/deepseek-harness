@@ -292,11 +292,14 @@ export class SessionRuntime implements ISessions {
         ? undefined
         : { events: conversationEvents, views: conversationViews }
     )
+    const linkedSession = typeof location === 'undefined'
+      ? undefined
+      : new URLSearchParams(location.search).get('session')?.trim() || undefined
     this.manager = new SessionManager(
       api,
       remote,
-      restored.sessionId,
-      restored.subagentAddress,
+      linkedSession === undefined ? restored.sessionId : linkedSession as SessionId,
+      linkedSession === undefined ? restored.subagentAddress : undefined,
       conversation,
     )
     this.list = createSnapshotStore<SessionListState>({

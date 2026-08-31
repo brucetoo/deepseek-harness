@@ -87,13 +87,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Owns the default model selection independently of any Host or transport. The composition entry remains usable without a settings provider; when one is mounted, its user layer is read live.',
     methods: [
       {
-        signature: 'currentSelection(): ModelSelection',
+        signature: 'currentSelection(): ModelSelectionIntent',
         description: 'Read the current default model selection.',
         parameters: [],
-        returns: 'a detached provider, model, and optional reasoning selection.',
+        returns: 'a detached logical model-selection intent.',
       },
       {
-        signature: 'async saveSelection(next: ModelSelection): Promise<void>',
+        signature: 'compositionSelection(): ModelSelectionIntent & { kind: \'model\' }',
+        description: 'Read the deployment\'s concrete Agent creation fallback.',
+        parameters: [],
+        returns: 'a detached concrete composition selection.',
+      },
+      {
+        signature: 'async saveSelection(next: ModelSelectionIntent): Promise<void>',
         description: 'Save the complete default model selection. A deployment without a settings provider keeps its composition entry.',
         parameters: [{ name: 'next', description: 'resolved selection accepted by an entry point.' }],
         returns: 'fulfillment after the optional settings write settles.',
@@ -711,6 +717,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'the created sandbox after the configured cwd exists.',
         throws: ['when E2B rejects creation or the service is disposing.'],
+      },
+    ],
+  },
+  {
+    key: 'feishuHitlNotifier',
+    summary: 'Observes admitted user questions and sends bounded Feishu notification cards.',
+    description: 'Observes admitted user questions and sends bounded Feishu notification cards.',
+    methods: [
+      {
+        signature: '@Remote(\'testRecipient\') async testRecipient(request: Recipient): Promise<RecipientTestResult>',
+        description: 'Send a fixed privacy-safe card to one currently configured recipient.',
+        parameters: [{ name: 'request', description: 'identity of a recipient already present in saved settings.' }],
+        returns: 'a sanitized delivery status without process output or recipient details.',
       },
     ],
   },
@@ -2782,6 +2801,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'exec', description: 'the execution object that traversed the pipeline.' }, { name: 'result', description: 'a deep-frozen snapshot of the final returned result.' }],
   },
   {
+    name: 'user-question/requested',
+    mode: 'emit',
+    signature: '\'user-question/requested\'(request: Readonly<AskUserQuestionRequest>): void',
+    summary: 'A validated question request entered the active provider.',
+    description: 'A validated question request entered the active provider. Observers may notify external surfaces but cannot answer, cancel, or delay the request. Observer failures are contained and cannot change the provider outcome.',
+    parameters: [{ name: 'request', description: 'Already validated request accepted by the active provider.' }],
+  },
+  {
     name: 'webserver/index-inject',
     mode: 'emit',
     signature: '\'webserver/index-inject\'(table: IndexInjection[]): void',
@@ -3908,6 +3935,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReasoningEffortId',
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
+  },
+  {
+    name: 'Recipient',
+    declaration: 'export interface Recipient {\n    type: \'open_id\' | \'user_id\' | \'chat_id\' | \'email\';\n    id: string;\n}',
+  },
+  {
+    name: 'RecipientTestResult',
+    declaration: 'export interface RecipientTestResult {\n    status: RecipientTestStatus;\n}',
+  },
+  {
+    name: 'RecipientTestStatus',
+    declaration: 'export type RecipientTestStatus = \'sent\' | \'busy\' | \'not-configured\' | \'delivery-failed\';',
   },
   {
     name: 'RedactedSecret',

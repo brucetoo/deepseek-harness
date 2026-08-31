@@ -136,7 +136,7 @@ async function harness(
   }
   ctx.agents.setFactory(factory)
   const api = createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
+    defaultModelSelection: () => ({ kind: 'model' as const, provider: 'test', model: 'test-model' }),
     cwd,
     ...options.defaults,
   })

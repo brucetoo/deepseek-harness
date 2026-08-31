@@ -103,7 +103,7 @@ function bench(options: {
   })
   ctx.provide('userQuestions', { registerProvider: () => () => {} })
   const api = createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp',
+    defaultModelSelection: () => ({ kind: 'model' as const, provider: 'p', model: 'm' }), cwd: '/tmp',
   })
   return { api, getAgent, listChildren, inspect, snapshot, restore, followup, interrupt, parent }
 }

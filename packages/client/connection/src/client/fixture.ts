@@ -33,7 +33,8 @@ import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepse
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
-  ModelProviderGroup, ModelSelection, RpcRequest, RpcResponse, RpcResult, ServerRequest, ServerResponse, SessionSummary,
+  ModelProviderGroup, ModelSelectionIntent, ResolvedModelRoute, RpcRequest, RpcResponse, RpcResult,
+  ServerRequest, ServerResponse, SessionSummary,
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
 } from './api.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -1530,10 +1531,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     { sessionId: sid('fx-gamma'), updatedAt: Date.now() - 120_000, running: false, blank: false, cwd: '/tmp/fixture' },
   ]
   const logs = new Map<SessionId, SessionEvent[]>([[sid('fx-alpha'), buildAlphaLog()]])
-  const modelSelections = new Map<SessionId, ModelSelection>(sessions.map(session => [
+  const modelSelections = new Map<SessionId, ModelSelectionIntent>(sessions.map(session => [
     session.sessionId,
-    { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
   ]))
+  const lastModelRoutes = new Map<SessionId, ResolvedModelRoute>()
+  for (const [sessionId, log] of logs) {
+    const route = lastRequestContext(log)
+    if (route !== undefined) lastModelRoutes.set(sessionId, { provider: route.provider, model: route.model })
+  }
   const attachments = new Map<string, { attachment: ImageAttachmentRef; data: string }>([[
     String(FIXTURE_IMAGE_REF.attachmentId),
     { attachment: FIXTURE_IMAGE_REF, data: FIXTURE_IMAGE_DATA },
@@ -2354,7 +2360,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           sessionId: requestedId ?? sid(`fx-${nextSession++}`), updatedAt: Date.now(), running: false, blank: true, cwd,
         }
         sessions.push(created)
-        modelSelections.set(created.sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+        modelSelections.set(created.sessionId, { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' })
         attachedSessions += 1
         const emitSession = (): void => {
           // Mirrors the host: the frame fires at creation, so blank is constantly true.
@@ -2462,25 +2468,28 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         if (doomed) throw new Error('fixture: simulated history transport failure')
         return ok(request, { ...page, ...projections === undefined ? {} : { projections } })
       },
-      models: request => ok(request, {
-        current: modelSelections.get(request.payload.sessionId)
-          ?? { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-        // The fixture's routes all serve; a surface exercising the blocked
-        // posture drives it through its own stub.
-        routable: true,
-        groups: fixtureModelGroups(),
-        failures: [],
-      }),
+      models: (request) => {
+        const lastRoute = lastModelRoutes.get(request.payload.sessionId)
+        return ok(request, {
+          current: modelSelections.get(request.payload.sessionId)
+            ?? { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+          ...lastRoute === undefined ? {} : { lastRoute },
+          // The fixture's routes all serve; a surface exercising the blocked
+          // posture drives it through its own stub.
+          routable: true,
+          groups: fixtureModelGroups(),
+          failures: [],
+        })
+      },
       selectModel: (request) => {
-        const selected: ModelSelection = {
-          provider: request.payload.provider,
-          model: request.payload.model,
-          ...request.payload.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: request.payload.reasoningEffort },
-        }
+        const selected = { ...request.payload.selection }
+        const lastRoute = lastModelRoutes.get(request.payload.sessionId)
         modelSelections.set(request.payload.sessionId, selected)
-        return ok(request, { selected })
+        return ok(request, {
+          selected,
+          ...lastRoute === undefined ? {} : { lastRoute },
+          routable: true,
+        })
       },
       prompt: (request) => {
         const { sessionId: id, mode, content } = request.payload
@@ -2542,11 +2551,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         // Capacity parallel of the host token-meter's request/context record:
         // log-only, appended inside the open turn, and deduplicated against the
         // route already recorded (the fixture never varies contextWindow).
-        const selection = modelSelections.get(id) ?? { provider: 'deepseek', model: 'deepseek-v4-flash' }
-        if (lastRequestContext(logOf(id))?.model !== selection.model) {
+        const selection = modelSelections.get(id)
+          ?? { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+        const route: ResolvedModelRoute = selection.kind === 'model'
+          ? {
+            provider: selection.provider,
+            model: selection.model,
+            ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+          }
+          : lastModelRoutes.get(id) ?? { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+        lastModelRoutes.set(id, route)
+        if (lastRequestContext(logOf(id))?.model !== route.model) {
           append(id, {
             type: 'request/context',
-            data: { provider: selection.provider, model: selection.model, contextWindow: 128_000 },
+            data: { provider: route.provider, model: route.model, contextWindow: 128_000 },
           })
         }
         startReply(
@@ -2556,9 +2574,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             ? MARKDOWN_FIXTURE
             : userText === 'report model'
               ? (() => {
-                const selection = modelSelections.get(id)
-                return `当前模型：${selection?.provider ?? 'unknown'}/${selection?.model ?? 'unknown'}`
-                  + (selection?.reasoningEffort === undefined ? '' : ` · 推理等级：${selection.reasoningEffort}`)
+                const route = lastModelRoutes.get(id)
+                return `当前模型：${route?.provider ?? 'unknown'}/${route?.model ?? 'unknown'}`
+                  + (route?.reasoningEffort === undefined ? '' : ` · 推理等级：${route.reasoningEffort}`)
               })()
               : `回声：${userText}。这是 fixture 的流式回复，用于验证打字机增长与定稿切换。`,
         )

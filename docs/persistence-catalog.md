@@ -476,6 +476,46 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 
 ### `llm/*`
 
+<a id="llmauto-failover--log-only"></a>
+
+#### `llm/auto-failover` — log-only
+
+```ts persistence-catalog
+/** Failed uncommitted physical attempt that authorized routing to another model. */
+'llm/auto-failover': {
+  attemptId: import('./brand.ts').AutoRouteAttemptId
+  turn: number
+  step: number
+  attempt: number
+  fromProvider: string
+  fromModel: string
+  failureCode: string
+}
+```
+
+Source: [`packages/llm/llm-auto-router/src/types.ts:23`](../packages/llm/llm-auto-router/src/types.ts)
+
+<a id="llmauto-route--log-only"></a>
+
+#### `llm/auto-route` — log-only
+
+```ts persistence-catalog
+/** Physical provider/model selected for one automatic request attempt. */
+'llm/auto-route': {
+  attemptId: import('./brand.ts').AutoRouteAttemptId
+  turn: number
+  step: number
+  attempt: number
+  pool: string
+  provider: string
+  model: string
+  candidateCount: number
+  reason: 'normal' | 'probe' | 'failover'
+}
+```
+
+Source: [`packages/llm/llm-auto-router/src/types.ts:11`](../packages/llm/llm-auto-router/src/types.ts)
+
 <a id="llmretry--log-only"></a>
 
 #### `llm/retry` — log-only
@@ -497,6 +537,19 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 ```
 
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+### `model/*`
+
+<a id="modelselection--log-only"></a>
+
+#### `model/selection` — log-only
+
+```ts persistence-catalog
+/** Durable logical model-selection intent accepted by Host. */
+'model/selection': ModelSelectionIntent
+```
+
+Source: [`packages/host/apiproxy/src/api-proxy.ts:21`](../packages/host/apiproxy/src/api-proxy.ts)
 
 ### `permission/*`
 

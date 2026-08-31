@@ -14,10 +14,11 @@ import { createScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelectionIntent, ResolvedModelRoute } from '@deepseek-ai/dsh-api-remotes/client'
 import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
+import { ModelDirectory } from '../src/client/directory.ts'
 import { zh } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
@@ -56,25 +57,33 @@ const GROUPS = [{
 /** Boot the plugin over fake faces + a stateful fake host (current moves on selectModel). */
 async function bench() {
   const ctx = new Context()
-  let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  let current: ModelSelectionIntent = {
+    kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash',
+  }
+  let lastRoute: ResolvedModelRoute | undefined = {
+    provider: 'deepseek-official', model: 'deepseek-v4-flash',
+  }
   const calls = { models: 0, select: 0 }
   ctx.provide('connection', { api: { sessions: {
     models: () => {
       calls.models += 1
       return Promise.resolve({
-        result: { ok: true as const, value: { current, routable, groups: GROUPS, failures: [] } },
+        result: { ok: true as const, value: { current, lastRoute, routable, groups: GROUPS, failures: [] } },
       })
     },
-    selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
+    selectModel: (payload: { selection: ModelSelectionIntent }) => {
       calls.select += 1
-      current = {
-        provider: payload.provider,
-        model: payload.model,
-        ...payload.reasoningEffort === undefined
-          ? {}
-          : { reasoningEffort: payload.reasoningEffort },
+      current = payload.selection
+      if (current.kind === 'model') {
+        lastRoute = {
+          provider: current.provider,
+          model: current.model,
+          ...current.reasoningEffort === undefined ? {} : { reasoningEffort: current.reasoningEffort },
+        }
       }
-      return Promise.resolve({ result: { ok: true as const, value: { selected: current } } })
+      return Promise.resolve({
+        result: { ok: true as const, value: { selected: current, lastRoute, routable } },
+      })
     },
   } } })
   // Whether the Host reports an adapter for the current route; the composer
@@ -132,7 +141,8 @@ async function bench() {
     contribution: () => contribution!,
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => current,
-    setHostCurrent: (selection: ModelSelection) => { current = selection },
+    setHostCurrent: (selection: ModelSelectionIntent) => { current = selection },
+    setLastRoute: (route: ResolvedModelRoute | undefined) => { lastRoute = route },
     address: (id: SessionId) => { addressed.add(id) },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
@@ -140,6 +150,70 @@ async function bench() {
 }
 
 const projection = (id: string) => ({ sessionId: sid(id) })
+
+describe('ModelDirectory ordering', () => {
+  it('ignores a stale load that settles after a newer selection', async () => {
+    let finishLoad!: (value: never) => void
+    const sessions = {
+      models: () => new Promise((resolve) => { finishLoad = resolve }),
+      selectModel: () => Promise.resolve({
+        result: {
+          ok: true as const,
+          value: { selected: { kind: 'auto' as const }, routable: true },
+        },
+      }),
+    }
+    const directory = new ModelDirectory(sessions as never, sid('s1'), () => true)
+    const loading = directory.load()
+    await directory.select({ kind: 'auto' })
+    finishLoad({
+      result: {
+        ok: true,
+        value: {
+          current: { kind: 'model', provider: 'old', model: 'old' },
+          lastRoute: { provider: 'old', model: 'old' },
+          routable: true,
+          groups: [],
+          failures: [],
+        },
+      },
+    } as never)
+    await loading
+    expect(directory.store.getSnapshot().current).toEqual({ kind: 'auto' })
+  })
+
+  it('ignores a stale selection that settles after a newer load', async () => {
+    let finishSelection!: (value: never) => void
+    const sessions = {
+      models: () => Promise.resolve({
+        result: {
+          ok: true as const,
+          value: {
+            current: { kind: 'model' as const, provider: 'new', model: 'new' },
+            lastRoute: { provider: 'new', model: 'new' },
+            routable: true,
+            groups: [],
+            failures: [],
+          },
+        },
+      }),
+      selectModel: () => new Promise((resolve) => { finishSelection = resolve }),
+    }
+    const directory = new ModelDirectory(sessions as never, sid('s1'), () => true)
+    const selecting = directory.select({ kind: 'auto' })
+    await directory.load()
+    finishSelection({
+      result: {
+        ok: true,
+        value: { selected: { kind: 'auto' }, routable: true },
+      },
+    } as never)
+    await selecting
+    expect(directory.store.getSnapshot().current).toEqual({
+      kind: 'model', provider: 'new', model: 'new',
+    })
+  })
+})
 
 describe('ui-model-selection dual entry', () => {
   it('registers the /model contribution and the composer model seat', async () => {
@@ -151,13 +225,22 @@ describe('ui-model-selection dual entry', () => {
     expect(b.seat().locale).toBe('model')
   })
 
-  it('popup options mark the host current active with the provider group in the detail', async () => {
+  it('puts one Auto row before physical groups and activates only the logical intent', async () => {
     const b = await bench()
     b.mint('s1')
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
-    expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
-    expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
+    let options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.label)).toEqual(['自动', 'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
+    expect(options[0]?.active).toBeUndefined()
+    expect(options[1]).toMatchObject({ active: true, detail: 'DeepSeek' })
+
+    b.setHostCurrent({ kind: 'auto' })
+    b.setLastRoute({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    expect(options[0]).toMatchObject({ active: true })
     expect(options[1]?.active).toBeUndefined()
+
+    await b.contribution().ui.onSelect(options[0]!, projection('s1'))
+    expect(b.hostCurrent()).toEqual({ kind: 'auto' })
   })
 
   it('a seat selection is the current the popup marks active next — one shared state', async () => {
@@ -166,16 +249,19 @@ describe('ui-model-selection dual entry', () => {
     const seatFace = b.seat().inject!(sid('s1'))
     // Switch through the SEAT entry.
     expect(await seatFace.select({
+      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
     })).toBe(true)
     expect(b.hostCurrent()).toEqual({
+      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
     })
     expect(seatFace.directory.getSnapshot().current).toEqual({
+      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
@@ -193,6 +279,7 @@ describe('ui-model-selection dual entry', () => {
     const pro = options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')!
     await b.contribution().ui.onSelect(pro, projection('s1'))
     expect(seatFace.directory.getSnapshot().current).toEqual({
+      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'high',
@@ -216,14 +303,14 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
-    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
-    b.setHostCurrent({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    await face.select({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    b.setHostCurrent({ kind: 'auto' })
 
     b.ctx.emit('connection/reset')
     expect(face.directory.getSnapshot()).toMatchObject({ current: null, status: 'loading' })
     await Promise.resolve()
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      current: { kind: 'auto' },
       status: 'ready',
     })
   })
@@ -272,7 +359,7 @@ describe('ui-model-selection dual entry', () => {
     // A model the route serves but no longer advertises: the seat prompts for
     // a selection, the composer stays usable. Blocking here would break a
     // supported configuration (a narrowed `models` list over a live route).
-    b.setHostCurrent({ provider: 'deepseek-official', model: 'unlisted' })
+    b.setHostCurrent({ kind: 'model', provider: 'deepseek-official', model: 'unlisted' })
     face.load()
     await Promise.resolve()
     await Promise.resolve()
@@ -314,10 +401,11 @@ describe('ui-model-selection dual entry', () => {
     const face = b.seat().inject!(sid('child'))
     expect(face.available).toBe(false)
     face.load()
-    await expect(face.select({ provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
+    await expect(face.select({ kind: 'model', provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
       .rejects.toThrow(/unavailable for addressed subagent/)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).select({
+      kind: 'model',
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
     })).rejects.toThrow(/unavailable for addressed subagent/)

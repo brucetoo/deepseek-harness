@@ -637,6 +637,50 @@ export interface Config {
 
 来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-feishu-hitl-notifier"></a>
+
+## `@deepseek-ai/dsh-feishu-hitl-notifier`
+
+需要：`userQuestions` · `sessionTitle` · `subprocess`
+
+```ts config-catalog
+/** Loader configuration for Feishu user-question notifications. */
+export interface Config {
+  /** Whether automatic question notifications are sent. */
+  enabled?: boolean
+  /** Absolute DSH Web URL used for session return links. */
+  webBaseUrl: string
+  /** Feishu destinations that receive each notification. */
+  recipients: Recipient[]
+  /** Maximum Unicode code points retained from the first question. */
+  summaryMaxChars?: number
+  /** Whether an available session title is included in the card. */
+  includeSessionTitle?: boolean
+  /** Deployment-owned executable, credential path, and timeout. */
+  cli?: CliConfig
+}
+
+/** One Feishu user or group destination accepted by `feishu-cli msg send`. */
+export interface Recipient {
+  /** Identifier kind interpreted by Feishu. */
+  type: 'open_id' | 'user_id' | 'chat_id' | 'email'
+  /** Opaque destination identifier for the selected kind. */
+  id: string
+}
+
+/** Deployment-owned `feishu-cli` process settings. */
+export interface CliConfig {
+  /** Executable name or path resolved through the subprocess provider. */
+  executable?: string
+  /** Credential configuration path passed to `feishu-cli`. */
+  configPath?: string
+  /** Maximum duration of one delivery attempt in milliseconds. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/host/feishu-hitl-notifier/src/index.ts:34`](../packages/host/feishu-hitl-notifier/src/index.ts)
+
 <a id="deepseek-aidsh-file-reference-local"></a>
 
 ## `@deepseek-ai/dsh-file-reference-local`
@@ -907,6 +951,76 @@ export interface Config {
 ```
 
 来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
+
+<a id="deepseek-aidsh-llm-auto-router"></a>
+
+## `@deepseek-ai/dsh-llm-auto-router`
+
+需要：`agents` · `llm` · `sessions` · `tokenMeter`
+
+```ts config-catalog
+/** Raw automatic-router plugin configuration. */
+export interface Config {
+  /** Virtual provider that invokes automatic routing. */
+  readonly virtualProvider?: string
+  /** Virtual model that invokes automatic routing. */
+  readonly virtualModel?: string
+  /** Named route-pattern pools. */
+  readonly pools?: Record<string, PoolConfig>
+  /** Explicit route policy keyed by canonical `provider/model` identity. */
+  readonly models?: Record<string, RouteConfig>
+  /** Maximum physical failovers within one logical step. */
+  readonly maxFailoversPerStep?: number
+  /** Tokens reserved beyond measured input and requested output. */
+  readonly tokenSafetyReserve?: number
+  /** Weight of each new timing sample in the latency EWMA. */
+  readonly ewmaAlpha?: number
+  /** Consecutive failures that open a route circuit. */
+  readonly failureThreshold?: number
+  /** Initial circuit-open cooldown. */
+  readonly baseCooldownMs?: number
+  /** Maximum circuit-open cooldown. */
+  readonly maxCooldownMs?: number
+  /** Concurrent probes allowed for a half-open route. */
+  readonly halfOpenConcurrency?: number
+  /** Score reduction applied to unsampled routes. */
+  readonly explorationWeight?: number
+  /** Relative latency, load, and failure score weights. */
+  readonly scoring?: ScoringWeights
+}
+
+/** Raw named pool configuration accepted from composition. */
+export interface PoolConfig {
+  /** Included provider/model patterns. */
+  readonly include?: string[]
+  /** Excluded provider/model patterns. */
+  readonly exclude?: string[]
+}
+
+/** Loader configuration for one explicit provider/model route. */
+export interface RouteConfig {
+  /** Named pool that owns this route. */
+  readonly pool: string
+  /** Whether selection may use this route. */
+  readonly enabled?: boolean
+  /** Non-negative score multiplier; lower values are preferred. */
+  readonly preferenceMultiplier?: number
+  /** Maximum concurrent attempts on this route. */
+  readonly concurrencyLimit: number
+}
+
+/** Relative contributions to a route's selection score. */
+export interface ScoringWeights {
+  /** Relative first-token latency contribution. */
+  readonly latency: number
+  /** Relative in-flight load contribution. */
+  readonly load: number
+  /** Relative recent-failure contribution. */
+  readonly failure: number
+}
+```
+
+来源：[`packages/llm/llm-auto-router/src/index.ts:71`](../packages/llm/llm-auto-router/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
