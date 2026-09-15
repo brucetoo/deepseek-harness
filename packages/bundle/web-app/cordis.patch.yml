@@ -229,8 +229,8 @@
     - id: ui-workflow-run
       name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
-    # Turn tail: the produced-files row under each closing assistant message.
-    # Remove this entry to turn the surface off; the tail hole renders empty.
+    # Produced-file row, session Results view, and inline file links. The
+    # model-facing artifact tool is composed separately by agent presets.
     - id: ui-deliverables
       name: '@deepseek-ai/dsh-client-ui-deliverables'
 

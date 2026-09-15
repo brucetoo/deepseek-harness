@@ -2,7 +2,7 @@
 
 import { randomBytes as nodeRandomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron'
 import {
   SidecarShutdownError,
@@ -400,18 +400,22 @@ const resolveDevelopmentStageRoot = (
  */
 export const createDesktopSidecarOptions = (
   input: DesktopSidecarOptionsInput,
-): ElectronRuntimeOptions => ({
-  sidecar: {
-    ...resolveDesktopSidecarPaths(input),
-    harnessHome: resolve(input.userDataPath, 'dsh'),
-    startupTimeoutMs: 10_000,
-    readinessConfirmationMs: 100,
-    stderrTailBytes: 8_192,
-    shutdownGraceMs: 2_000,
-    terminationGraceMs: 2_000,
-    killGraceMs: 1_000,
-  },
-})
+): ElectronRuntimeOptions => {
+  const paths = resolveDesktopSidecarPaths(input)
+  return {
+    sidecar: {
+      ...paths,
+      bundledSkillDirectory: resolve(dirname(paths.nodeExecutable), '../../app/skills'),
+      harnessHome: resolve(input.userDataPath, 'dsh'),
+      startupTimeoutMs: 10_000,
+      readinessConfirmationMs: 100,
+      stderrTailBytes: 8_192,
+      shutdownGraceMs: 2_000,
+      terminationGraceMs: 2_000,
+      killGraceMs: 1_000,
+    },
+  }
+}
 
 const adaptWindow = (window: ElectronBrowserWindow): DesktopWindow => ({
   webContents: {

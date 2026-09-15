@@ -139,6 +139,8 @@ export interface SidecarSupervisorOptions {
   readonly cliEntry: string
   /** Desktop-owned Harness home, isolated from the user's CLI installation. */
   readonly harnessHome: string
+  /** Read-only application skills shipped inside the staged runtime. */
+  readonly bundledSkillDirectory: string
   /** Optional working directory for the staged process. */
   readonly cwd?: string
   /** Environment source filtered through the platform allowlist. */
@@ -285,6 +287,8 @@ export class SidecarSupervisor {
         this.#dependencies.platform,
         this.#options.inheritedEnvironment ?? process.env,
         this.#options.harnessHome,
+        this.#options.nodeExecutable,
+        this.#options.bundledSkillDirectory,
         this.#token,
       ),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -488,6 +492,8 @@ function launchEnvironment(
   platform: NodeJS.Platform,
   inherited: NodeJS.ProcessEnv,
   harnessHome: string,
+  nodeExecutable: string,
+  bundledSkillDirectory: string,
   token: string,
 ): NodeJS.ProcessEnv {
   const keys = platform === 'win32' ? WINDOWS_ENVIRONMENT_KEYS : POSIX_ENVIRONMENT_KEYS
@@ -497,6 +503,9 @@ function launchEnvironment(
     if (value !== undefined) environment[key] = value
   }
   environment.DSH_HOME = harnessHome
+  environment.DSH_BUNDLED_SKILL_DIR = bundledSkillDirectory
+  environment.DEEPSEEK_HARNESS_DESKTOP_NODE = nodeExecutable
+  environment.DEEPSEEK_HARNESS_BUNDLED_SKILL_DIR = bundledSkillDirectory
   environment[TOKEN_ENVIRONMENT_NAME] = token
   return environment
 }

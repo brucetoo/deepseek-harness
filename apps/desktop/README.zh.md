@@ -22,6 +22,12 @@ Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` �
 
 应用只允许一个实例。第二次启动会聚焦现有窗口。关闭最后一个窗口后，Electron 会先执行有界的 sidecar 关闭流程，再退出。桌面数据使用 Electron `userData` 目录下的 `dsh/` 子目录，不读取用户 CLI 的 `$DSH_HOME`。
 
+## 内置工作流
+
+打包后的 sidecar 会把其确切 Node 可执行文件和只读的 `app/skills` 目录提供给 skill provider。桌面应用内置 `office-docx`、`office-xlsx` 和 `browser-research`。Office 技能使用打包的 `docx` 与 `exceljs` 依赖运行内置 JavaScript 生成器，再通过 `register_artifact` 把二进制输出加入 Session 的**成果**视图。浏览器调研会组合既有 `web_search`、`web_fetch` 与文本文件工具，生成带引用的 Markdown 成果。
+
+**成果**视图从持久的成功修改与登记调用中重建 registry，不维护独立数据库。重新加载和历史分页会重放同一批 Session 事件，文件操作复用已有的 workspace 感知 Host 打开器。
+
 ## 暂存与打包
 
 [`apps/desktop-runtime`](../desktop-runtime/package.json) 是显式的 pnpm 部署根目录，列出 Web 组合需要的全部运行时依赖与对等依赖（peer dependency）。暂存流程会构建仓库，创建将 workspace 包注入为文件的生产部署，复制当前 Node 可执行文件，并校验必要资源、生成的 Remote 模块、原生模块导入、Node 版本、可执行权限、符号链接包含关系，以及不依赖 checkout 的 CLI 冒烟测试。
@@ -33,4 +39,6 @@ Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` �
 - 其他进程占用固定端口 `37615` 时，应用会明确报错并停止。
 - macOS 产物未签名，也未经过 notarization（公证）。
 - Windows 打包、签名、更新、托盘行为以及最后一个窗口关闭后的后台执行尚未实现。
+- 浏览器调研能够获取并汇总网页，但不能点击、填写、登录或控制交互式浏览器会话。
+- 内置 Office 工作流能够创建新的 DOCX 与 XLSX 文件；编辑现有 Office 文档、通过 Office 引擎重算工作簿公式以及生成 PPTX 尚未实现。
 - 桌面载体使用已鉴权的 loopback HTTP 与 WebSocket 通信，不提供 TLS，也不使用 Electron IPC 传输。

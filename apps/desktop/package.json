@@ -8,6 +8,8 @@
   "license": "MIT",
   "main": "lib/types/src/main.js",
   "devDependencies": {
-    "electron": "44.3.0"
+    "electron": "44.3.0",
+    "exceljs": "^4.4.0",
+    "fflate": "^0.8.2"
   }
 }

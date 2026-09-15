@@ -156,6 +156,11 @@ const requiredFiles = new Map<string, string>([
   ['app/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.remote-client.js', 'generated Remote entrypoint'],
   ['app/node_modules/@deepseek-ai/dsh-message-feedback/lib/typert.remote-client.js', 'generated Remote entrypoint'],
   ['app/node_modules/@deepseek-ai/dsh-session-reference/lib/typert.remote-client.js', 'generated Remote entrypoint'],
+  ['app/skills/office-docx/SKILL.md', 'DOCX skill'],
+  ['app/skills/office-docx/scripts/create-document.mjs', 'DOCX generator'],
+  ['app/skills/office-xlsx/SKILL.md', 'XLSX skill'],
+  ['app/skills/office-xlsx/scripts/create-workbook.mjs', 'XLSX generator'],
+  ['app/skills/browser-research/SKILL.md', 'browser research skill'],
 ])
 
 const isMissing = (error: unknown): boolean =>
@@ -247,7 +252,7 @@ export const validateDesktopStage = async (
       throw new Error('Node executable is not executable')
     }
   }
-  for (const dependency of ['node-pty', 'koffi']) {
+  for (const dependency of ['node-pty', 'koffi', 'docx', 'exceljs']) {
     await assertFile(
       join(stage, 'app/node_modules', dependency, 'package.json'),
       `runtime dependency ${dependency} does not resolve`,

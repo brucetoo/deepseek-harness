@@ -88,6 +88,7 @@ function supervisor(
     nodeExecutable: process.execPath,
     cliEntry: fixturePath,
     harnessHome: '/tmp/dsh-desktop-home',
+    bundledSkillDirectory: '/opt/dsh-desktop/skills',
     inheritedEnvironment: {
       HOME: '/tmp/dsh-desktop-home',
       NODE_OPTIONS: '--must-not-be-inherited',
@@ -137,7 +138,10 @@ describe('desktop sidecar startup', () => {
     ], {
       env: {
         DSH_DESKTOP_TOKEN: 'fragmented',
+        DSH_BUNDLED_SKILL_DIR: '/opt/dsh-desktop/skills',
         DSH_HOME: '/tmp/dsh-desktop-home',
+        DEEPSEEK_HARNESS_BUNDLED_SKILL_DIR: '/opt/dsh-desktop/skills',
+        DEEPSEEK_HARNESS_DESKTOP_NODE: process.execPath,
         HOME: '/tmp/dsh-desktop-home',
         PATH: process.env.PATH,
       },

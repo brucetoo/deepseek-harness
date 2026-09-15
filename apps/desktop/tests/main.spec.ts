@@ -203,6 +203,7 @@ describe('desktop sidecar paths', () => {
     })).toMatchObject({
       sidecar: {
         harnessHome: '/Users/test/Library/Application Support/DeepSeek Harness/dsh',
+        bundledSkillDirectory: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/skills',
       },
     })
   })

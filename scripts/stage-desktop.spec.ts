@@ -46,6 +46,11 @@ const requiredFiles = [
   'app/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.remote-client.js',
   'app/node_modules/@deepseek-ai/dsh-message-feedback/lib/typert.remote-client.js',
   'app/node_modules/@deepseek-ai/dsh-session-reference/lib/typert.remote-client.js',
+  'app/skills/office-docx/SKILL.md',
+  'app/skills/office-docx/scripts/create-document.mjs',
+  'app/skills/office-xlsx/SKILL.md',
+  'app/skills/office-xlsx/scripts/create-workbook.mjs',
+  'app/skills/browser-research/SKILL.md',
 ] as const
 
 const fixtureRoot = (): string => {
@@ -83,6 +88,8 @@ const populateValidStage = (stage: string): void => {
   }))
   createPackage(stage, 'node-pty')
   createPackage(stage, 'koffi')
+  createPackage(stage, 'docx')
+  createPackage(stage, 'exceljs')
   const node = join(stage, 'node/bin', process.platform === 'win32' ? 'node.exe' : 'node')
   write(node)
   if (process.platform !== 'win32') chmodSync(node, 0o755)
@@ -179,6 +186,9 @@ describe('desktop stage validation', () => {
     ['Web composition', 'app/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml'],
     ['Web dist index', 'app/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'],
     ['generated Remote entrypoint', 'app/node_modules/@deepseek-ai/dsh-goal/lib/typert.remote-client.js'],
+    ['DOCX skill', 'app/skills/office-docx/SKILL.md'],
+    ['XLSX generator', 'app/skills/office-xlsx/scripts/create-workbook.mjs'],
+    ['browser research skill', 'app/skills/browser-research/SKILL.md'],
   ])('rejects a missing %s', async (label, relativePath) => {
     const stage = createValidStage()
     rmSync(join(stage, relativePath), { force: true })
@@ -186,7 +196,7 @@ describe('desktop stage validation', () => {
     await expect(validate(stage)).rejects.toThrow(`${label} is missing`)
   })
 
-  it.each(['node-pty', 'koffi'])('rejects an unresolved %s runtime dependency', async (dependency) => {
+  it.each(['node-pty', 'koffi', 'docx', 'exceljs'])('rejects an unresolved %s runtime dependency', async (dependency) => {
     const stage = createValidStage()
     rmSync(join(stage, 'app/node_modules', dependency), { recursive: true, force: true })
 
