@@ -1,0 +1,8 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Desktop application lifecycle and packaging",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}
