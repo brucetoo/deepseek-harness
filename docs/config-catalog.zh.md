@@ -397,6 +397,40 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-browser-playwright-electron"></a>
+
+## `@deepseek-ai/dsh-browser-playwright-electron`
+
+需要：`subprocess`
+
+```ts config-catalog
+/** Provider configuration resolved by the desktop Host composition. */
+export interface Config {
+  /** Electron executable used for the dedicated worker. */
+  readonly electronExecutable: string
+  /** Desktop application entry loaded by Electron. */
+  readonly applicationEntry: string
+  /** Parent directory for ephemeral Chromium profiles. */
+  readonly tempRoot: string
+  /** Milliseconds allowed for worker and CDP readiness. */
+  readonly launchTimeoutMs: number
+  /** Milliseconds allowed for Playwright and worker-protocol operations. */
+  readonly operationTimeoutMs: number
+  /** Milliseconds allowed for navigation policy events to settle after an operation. */
+  readonly navigationSettleMs: number
+  /** Milliseconds allowed for driver cleanup and process-tree quiescence. */
+  readonly cleanupTimeoutMs: number
+  /** Milliseconds between graceful and forced worker termination. */
+  readonly processGraceMs: number
+  /** Maximum bytes accepted from one worker protocol phase. */
+  readonly readinessMaxBytes: number
+  /** Maximum depth of returned ARIA snapshots. */
+  readonly snapshotDepth: number
+}
+```
+
+来源：[`packages/browser/browser-playwright-electron/src/index.ts:43`](../packages/browser/browser-playwright-electron/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -2710,6 +2744,26 @@ export interface Config {
 
 来源：[`packages/shell/tool-bash-persistent/src/index.ts:432`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+需要：`tools` · `browser` · `approval` · `systemPrompt`
+
+```ts config-catalog
+/** Model-facing browser tool configuration. */
+export interface Config {
+  /** Maximum UTF-8 bytes retained in one complete observation. */
+  readonly maxOutputBytes?: number
+  /** Cooperative execution budget attached to each tool definition. */
+  readonly timeoutMs?: number
+  /** Maximum duration accepted by `browser_wait`. */
+  readonly maxWaitMs?: number
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts:43`](../packages/browser/tool-browser/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3465,6 +3519,7 @@ export interface Config {
 抽象服务类——部署时应改为加载具体的实现包（参见[能力 seam](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)）。
 
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
+- `@deepseek-ai/dsh-browser` — 抽象 `BrowserRuntime`（[`packages/browser/browser/src/index.ts`](../packages/browser/browser/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime` — 抽象 `CodeRuntime`（[`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
 - `@deepseek-ai/dsh-credentials` — 抽象 `Credentials`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）

@@ -51,6 +51,7 @@ const requiredFiles = [
   'app/skills/office-xlsx/SKILL.md',
   'app/skills/office-xlsx/scripts/create-workbook.mjs',
   'app/skills/browser-research/SKILL.md',
+  'app/skills/browser-task/SKILL.md',
 ] as const
 
 const fixtureRoot = (): string => {
@@ -189,6 +190,7 @@ describe('desktop stage validation', () => {
     ['DOCX skill', 'app/skills/office-docx/SKILL.md'],
     ['XLSX generator', 'app/skills/office-xlsx/scripts/create-workbook.mjs'],
     ['browser research skill', 'app/skills/browser-research/SKILL.md'],
+    ['browser task skill', 'app/skills/browser-task/SKILL.md'],
   ])('rejects a missing %s', async (label, relativePath) => {
     const stage = createValidStage()
     rmSync(join(stage, relativePath), { force: true })

@@ -166,6 +166,24 @@
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'
 
+    # Desktop-only visible public browser. The Electron shell supplies all
+    # three paths through its scrubbed sidecar environment; ordinary CLI
+    # launches leave this row disabled.
+    - id: browser-playwright-electron
+      name: '@deepseek-ai/dsh-browser-playwright-electron'
+      disabled: !!js "!process.env.DSH_BROWSER_ELECTRON_EXECUTABLE || !process.env.DSH_BROWSER_APPLICATION_ENTRY || !process.env.DSH_BROWSER_TEMP_ROOT"
+      config:
+        electronExecutable: !!js process.env.DSH_BROWSER_ELECTRON_EXECUTABLE
+        applicationEntry: !!js process.env.DSH_BROWSER_APPLICATION_ENTRY
+        tempRoot: !!js process.env.DSH_BROWSER_TEMP_ROOT
+        launchTimeoutMs: 10000
+        operationTimeoutMs: 10000
+        navigationSettleMs: 100
+        cleanupTimeoutMs: 5000
+        processGraceMs: 2000
+        readinessMaxBytes: 16384
+        snapshotDepth: 8
+
     # Every shipped CLI mode starts with the same file-effect boundary.
     # The environment remains an explicit deployment override; otherwise fresh
     # sessions pin workspace-write + ask through the permission service below.

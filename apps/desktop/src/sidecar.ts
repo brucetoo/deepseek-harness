@@ -106,7 +106,7 @@ export interface SidecarStartResult {
 }
 
 /** Child-process options pinned by the desktop launch contract. */
-export interface SidecarSpawnOptions extends Omit<SpawnOptionsWithoutStdio, 'stdio'> {
+interface SidecarSpawnOptions extends Omit<SpawnOptionsWithoutStdio, 'stdio'> {
   /** Scrubbed inherited environment plus the per-launch bearer token. */
   readonly env: NodeJS.ProcessEnv
   /** All three standard streams remain available to the supervisor. */
@@ -141,6 +141,12 @@ export interface SidecarSupervisorOptions {
   readonly harnessHome: string
   /** Read-only application skills shipped inside the staged runtime. */
   readonly bundledSkillDirectory: string
+  /** Electron executable used only for the isolated browser worker. */
+  readonly browserElectronExecutable: string
+  /** Electron application entry loaded by the isolated browser worker. */
+  readonly browserApplicationEntry: string
+  /** Desktop-owned parent for ephemeral browser profiles. */
+  readonly browserTempRoot: string
   /** Optional working directory for the staged process. */
   readonly cwd?: string
   /** Environment source filtered through the platform allowlist. */
@@ -289,6 +295,9 @@ export class SidecarSupervisor {
         this.#options.harnessHome,
         this.#options.nodeExecutable,
         this.#options.bundledSkillDirectory,
+        this.#options.browserElectronExecutable,
+        this.#options.browserApplicationEntry,
+        this.#options.browserTempRoot,
         this.#token,
       ),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -494,6 +503,9 @@ function launchEnvironment(
   harnessHome: string,
   nodeExecutable: string,
   bundledSkillDirectory: string,
+  browserElectronExecutable: string,
+  browserApplicationEntry: string,
+  browserTempRoot: string,
   token: string,
 ): NodeJS.ProcessEnv {
   const keys = platform === 'win32' ? WINDOWS_ENVIRONMENT_KEYS : POSIX_ENVIRONMENT_KEYS
@@ -504,6 +516,9 @@ function launchEnvironment(
   }
   environment.DSH_HOME = harnessHome
   environment.DSH_BUNDLED_SKILL_DIR = bundledSkillDirectory
+  environment.DSH_BROWSER_APPLICATION_ENTRY = browserApplicationEntry
+  environment.DSH_BROWSER_ELECTRON_EXECUTABLE = browserElectronExecutable
+  environment.DSH_BROWSER_TEMP_ROOT = browserTempRoot
   environment.DEEPSEEK_HARNESS_DESKTOP_NODE = nodeExecutable
   environment.DEEPSEEK_HARNESS_BUNDLED_SKILL_DIR = bundledSkillDirectory
   environment[TOKEN_ENVIRONMENT_NAME] = token

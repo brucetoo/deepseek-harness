@@ -161,6 +161,7 @@ const requiredFiles = new Map<string, string>([
   ['app/skills/office-xlsx/SKILL.md', 'XLSX skill'],
   ['app/skills/office-xlsx/scripts/create-workbook.mjs', 'XLSX generator'],
   ['app/skills/browser-research/SKILL.md', 'browser research skill'],
+  ['app/skills/browser-task/SKILL.md', 'browser task skill'],
 ])
 
 const isMissing = (error: unknown): boolean =>

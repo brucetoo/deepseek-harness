@@ -508,6 +508,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'browser',
+    summary: 'One visible ephemeral browser owned by an exact live Agent and therefore by its Session.',
+    description: 'One visible ephemeral browser owned by an exact live Agent and therefore by its Session. Implementations serialize calls and release ownership only after complete worker and profile cleanup.',
+    methods: [
+      {
+        signature: 'abstract open( owner: Agent, request: BrowserOpenRequest, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Open a new ephemeral browser after the Consumer obtains approval.',
+        parameters: [{ name: 'owner', description: 'Exact Agent whose Session owns the browser.' }, { name: 'request', description: 'Canonical credential-free HTTP(S) target.' }, { name: 'signal', description: 'Cancellation of launch and navigation.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract snapshot(owner: Agent, signal?: AbortSignal): Promise<BrowserObservation>',
+        description: 'Observe the current page without changing it.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'signal', description: 'Cancellation of snapshot collection.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract prepare( owner: Agent, action: BrowserElementAction, signal?: AbortSignal, ): Promise<BrowserPreparedAction>',
+        description: 'Resolve and retain one exact element without acting on it.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'action', description: 'Accessible target and requested mutation.' }, { name: 'signal', description: 'Cancellation of element resolution.' }],
+        returns: 'Prepared identity and approval-visible fingerprint.',
+      },
+      {
+        signature: 'abstract commit( owner: Agent, id: BrowserPreparedActionId, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Recheck and commit a previously prepared element action exactly once.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'id', description: 'Provider-issued prepared action identity.' }, { name: 'signal', description: 'Cancellation of action and resulting observation.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract release(owner: Agent, id: BrowserPreparedActionId): Promise<void>',
+        description: 'Release one prepared action without executing it. Implementations make repeated release harmless so every fail-closed path can converge here.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'id', description: 'Provider-issued prepared action identity.' }],
+      },
+      {
+        signature: 'abstract wait( owner: Agent, request: BrowserWaitRequest, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Wait for a bounded interval, then observe the current page.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'request', description: 'Duration selected by the Consumer within its configured cap.' }, { name: 'signal', description: 'Cancellation of the wait.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract close(owner: Agent): Promise<void>',
+        description: 'Close the owner\'s browser and await worker and profile quiescence.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }],
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -3043,6 +3090,54 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserClickRequest',
+    declaration: 'export interface BrowserClickRequest {\n    readonly kind: \'click\';\n    readonly target: BrowserElementTarget;\n}',
+  },
+  {
+    name: 'BrowserElementAction',
+    declaration: 'export type BrowserElementAction = BrowserClickRequest | BrowserFillRequest | BrowserSelectRequest;',
+  },
+  {
+    name: 'BrowserElementFingerprint',
+    declaration: 'export interface BrowserElementFingerprint {\n    readonly tagName: string;\n    readonly role: string;\n    readonly accessibleName: string;\n    readonly inputType?: string;\n    readonly href?: string;\n    readonly formAction?: string;\n}',
+  },
+  {
+    name: 'BrowserElementTarget',
+    declaration: 'export interface BrowserElementTarget {\n    readonly role: string;\n    readonly name: string;\n    readonly index?: number;\n}',
+  },
+  {
+    name: 'BrowserFillRequest',
+    declaration: 'export interface BrowserFillRequest {\n    readonly kind: \'fill\';\n    readonly target: BrowserElementTarget;\n    readonly value: string;\n}',
+  },
+  {
+    name: 'BrowserObservation',
+    declaration: 'export interface BrowserObservation {\n    readonly url: string;\n    readonly title: string;\n    readonly snapshot: string;\n}',
+  },
+  {
+    name: 'BrowserOpenRequest',
+    declaration: 'export interface BrowserOpenRequest {\n    readonly url: string;\n}',
+  },
+  {
+    name: 'BrowserPreparedAction',
+    declaration: 'export interface BrowserPreparedAction {\n    readonly id: BrowserPreparedActionIdValue;\n    readonly owner: Agent;\n    readonly pageUrl: string;\n    readonly action: BrowserElementAction;\n    readonly fingerprint: BrowserElementFingerprint;\n}',
+  },
+  {
+    name: 'BrowserPreparedActionId',
+    declaration: 'export type BrowserPreparedActionId = BrowserPreparedActionIdValue;',
+  },
+  {
+    name: 'BrowserPreparedActionIdValue',
+    declaration: 'export type BrowserPreparedActionIdValue = Branded<\'BrowserPreparedActionId\'>;',
+  },
+  {
+    name: 'BrowserSelectRequest',
+    declaration: 'export interface BrowserSelectRequest {\n    readonly kind: \'select\';\n    readonly target: BrowserElementTarget;\n    readonly option: string;\n}',
+  },
+  {
+    name: 'BrowserWaitRequest',
+    declaration: 'export interface BrowserWaitRequest {\n    readonly durationMs: number;\n}',
   },
   {
     name: 'CancelOptions',

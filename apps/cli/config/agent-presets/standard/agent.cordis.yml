@@ -250,3 +250,14 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+
+# The Electron sidecar supplies the same three-path presence predicate as the
+# Host browser provider. Ordinary CLI sessions therefore expose no browser
+# control tools.
+- id: tool-browser
+  name: '@deepseek-ai/dsh-tool-browser'
+  disabled: !!js "!process.env.DSH_BROWSER_ELECTRON_EXECUTABLE || !process.env.DSH_BROWSER_APPLICATION_ENTRY || !process.env.DSH_BROWSER_TEMP_ROOT"
+  config:
+    maxOutputBytes: 64000
+    timeoutMs: 30000
+    maxWaitMs: 10000

@@ -14,6 +14,7 @@
     "where.exe"
   ],
   "ignoreWorkspaces": [
+    "apps/desktop-runtime",
     "vendor/*",
     "python/sdk-runtime"
   ],
@@ -647,6 +648,16 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/.+"
+      ]
+    },
+    "packages/browser/browser-playwright-electron": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "tests/**/*.e2e.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
       ]
     },
     "packages/subagent/subagent-dsh-sdk": {

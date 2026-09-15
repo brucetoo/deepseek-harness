@@ -252,6 +252,16 @@
     fetch: false
     searchTimeoutMs: 60000
 
+# Desktop-only public browser controls; the Host provider uses the same
+# three-path presence predicate.
+- id: tool-browser
+  name: '@deepseek-ai/dsh-tool-browser'
+  disabled: !!js "!process.env.DSH_BROWSER_ELECTRON_EXECUTABLE || !process.env.DSH_BROWSER_APPLICATION_ENTRY || !process.env.DSH_BROWSER_TEMP_ROOT"
+  config:
+    maxOutputBytes: 64000
+    timeoutMs: 30000
+    maxWaitMs: 10000
+
 # ── presentation ────────────────────────────────────────────────────────────
 
 # Code Mode for this agent alone. The row waits for the host's `codeRuntime`

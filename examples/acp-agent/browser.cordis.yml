@@ -1,0 +1,17 @@
+# Public-browser snapshot composition. The model-facing Consumer and approval
+# path are real; a deterministic Provider replaces Electron so this assembled
+# Session test remains keyless and display-independent.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: approval
+        name: '@deepseek-ai/dsh-user-approval'
+        config:
+          policy: ask
+      - insert:
+          - id: browser-fixture
+            name: './tests/fixtures/browser-provider.mjs'
+          - id: tool-browser
+            name: '@deepseek-ai/dsh-tool-browser'

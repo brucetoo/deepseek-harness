@@ -25,7 +25,7 @@ The application permits one instance. A second launch focuses the existing windo
 
 ## Built-in workflows
 
-The packaged sidecar exposes its exact Node executable and read-only `app/skills` directory to the skill provider. The desktop application includes `office-docx`, `office-xlsx`, and `browser-research`. The Office skills run bundled JavaScript generators with packaged `docx` and `exceljs` dependencies, then use `register_artifact` to place the binary output in the Session's **Deliverables** view. Browser research composes the existing `web_search`, `web_fetch`, and text-file tools into a cited Markdown deliverable.
+The packaged sidecar exposes its exact Node executable and read-only `app/skills` directory to the skill provider. The desktop application includes `office-docx`, `office-xlsx`, `browser-research`, and `browser-task`. The Office skills run bundled JavaScript generators with packaged `docx` and `exceljs` dependencies, then use `register_artifact` to place the binary output in the Session's **Deliverables** view. Browser research composes the existing `web_search`, `web_fetch`, and text-file tools into a cited Markdown deliverable. Browser task uses a visible ephemeral Electron window for approved interaction with credential-free public pages; it supports opening, ARIA observation, exact accessible clicks/fills/selections, bounded waits, and explicit close.
 
 The **Deliverables** view reconstructs its registry from durable successful mutation and registration calls. It contains no separate database: reload and history paging replay the same Session events, and file actions use the existing workspace-aware Host opener.
 
@@ -40,6 +40,6 @@ Each stage records the source commit, lockfile SHA-256 digest, Node version, pla
 - The fixed port fails loud when another process already owns `37615`.
 - The macOS artifact is unsigned and unnotarized. The Windows artifact is unsigned.
 - Signing, updates, tray behavior, and background execution after the last window closes are not implemented.
-- Browser research retrieves and synthesizes pages but does not click, fill, authenticate, or control an interactive browser session.
+- Browser task does not support login, credentials, private pages, uploads, downloads, popups, screenshots, tabs, arbitrary scripts, or coordinate-based interaction.
 - The bundled Office workflows create new DOCX and XLSX files. Editing existing Office documents, recalculating workbook formulas through an Office engine, and PPTX generation are not implemented.
 - The desktop carrier uses authenticated loopback HTTP and WebSocket traffic. It does not provide TLS and does not use an Electron IPC transport.

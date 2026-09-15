@@ -200,10 +200,14 @@ describe('desktop sidecar paths', () => {
       appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
       platform: 'darwin',
       userDataPath: '/Users/test/Library/Application Support/DeepSeek Harness',
+      electronExecutable: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
     })).toMatchObject({
       sidecar: {
         harnessHome: '/Users/test/Library/Application Support/DeepSeek Harness/dsh',
         bundledSkillDirectory: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/skills',
+        browserElectronExecutable: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+        browserApplicationEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+        browserTempRoot: '/Users/test/Library/Application Support/DeepSeek Harness/browser',
       },
     })
   })

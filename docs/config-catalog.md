@@ -395,6 +395,40 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-browser-playwright-electron"></a>
+
+## `@deepseek-ai/dsh-browser-playwright-electron`
+
+Requires: `subprocess`
+
+```ts config-catalog
+/** Provider configuration resolved by the desktop Host composition. */
+export interface Config {
+  /** Electron executable used for the dedicated worker. */
+  readonly electronExecutable: string
+  /** Desktop application entry loaded by Electron. */
+  readonly applicationEntry: string
+  /** Parent directory for ephemeral Chromium profiles. */
+  readonly tempRoot: string
+  /** Milliseconds allowed for worker and CDP readiness. */
+  readonly launchTimeoutMs: number
+  /** Milliseconds allowed for Playwright and worker-protocol operations. */
+  readonly operationTimeoutMs: number
+  /** Milliseconds allowed for navigation policy events to settle after an operation. */
+  readonly navigationSettleMs: number
+  /** Milliseconds allowed for driver cleanup and process-tree quiescence. */
+  readonly cleanupTimeoutMs: number
+  /** Milliseconds between graceful and forced worker termination. */
+  readonly processGraceMs: number
+  /** Maximum bytes accepted from one worker protocol phase. */
+  readonly readinessMaxBytes: number
+  /** Maximum depth of returned ARIA snapshots. */
+  readonly snapshotDepth: number
+}
+```
+
+Source: [`packages/browser/browser-playwright-electron/src/index.ts:43`](../packages/browser/browser-playwright-electron/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -2708,6 +2742,26 @@ export interface Config {
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:432`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+Requires: `tools` · `browser` · `approval` · `systemPrompt`
+
+```ts config-catalog
+/** Model-facing browser tool configuration. */
+export interface Config {
+  /** Maximum UTF-8 bytes retained in one complete observation. */
+  readonly maxOutputBytes?: number
+  /** Cooperative execution budget attached to each tool definition. */
+  readonly timeoutMs?: number
+  /** Maximum duration accepted by `browser_wait`. */
+  readonly maxWaitMs?: number
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts:43`](../packages/browser/tool-browser/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3463,6 +3517,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
+- `@deepseek-ai/dsh-browser` — abstract `BrowserRuntime` ([`packages/browser/browser/src/index.ts`](../packages/browser/browser/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))

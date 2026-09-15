@@ -89,8 +89,12 @@ function supervisor(
     cliEntry: fixturePath,
     harnessHome: '/tmp/dsh-desktop-home',
     bundledSkillDirectory: '/opt/dsh-desktop/skills',
+    browserElectronExecutable: '/opt/DeepSeek Harness/electron',
+    browserApplicationEntry: '/opt/DeepSeek Harness/resources/app.asar',
+    browserTempRoot: '/tmp/dsh-desktop-browser',
     inheritedEnvironment: {
       HOME: '/tmp/dsh-desktop-home',
+      DSH_BROWSER_ELECTRON_EXECUTABLE: '/untrusted/electron',
       NODE_OPTIONS: '--must-not-be-inherited',
       PATH: process.env.PATH,
     },
@@ -139,6 +143,9 @@ describe('desktop sidecar startup', () => {
       env: {
         DSH_DESKTOP_TOKEN: 'fragmented',
         DSH_BUNDLED_SKILL_DIR: '/opt/dsh-desktop/skills',
+        DSH_BROWSER_APPLICATION_ENTRY: '/opt/DeepSeek Harness/resources/app.asar',
+        DSH_BROWSER_ELECTRON_EXECUTABLE: '/opt/DeepSeek Harness/electron',
+        DSH_BROWSER_TEMP_ROOT: '/tmp/dsh-desktop-browser',
         DSH_HOME: '/tmp/dsh-desktop-home',
         DEEPSEEK_HARNESS_BUNDLED_SKILL_DIR: '/opt/dsh-desktop/skills',
         DEEPSEEK_HARNESS_DESKTOP_NODE: process.execPath,

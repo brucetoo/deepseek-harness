@@ -25,7 +25,7 @@ Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` �
 
 ## 内置工作流
 
-打包后的 sidecar 会把其确切 Node 可执行文件和只读的 `app/skills` 目录提供给 skill provider。桌面应用内置 `office-docx`、`office-xlsx` 和 `browser-research`。Office 技能使用打包的 `docx` 与 `exceljs` 依赖运行内置 JavaScript 生成器，再通过 `register_artifact` 把二进制输出加入 Session 的**成果**视图。浏览器调研会组合既有 `web_search`、`web_fetch` 与文本文件工具，生成带引用的 Markdown 成果。
+打包后的 sidecar 会把其确切 Node 可执行文件和只读的 `app/skills` 目录提供给 skill provider。桌面应用内置 `office-docx`、`office-xlsx`、`browser-research` 和 `browser-task`。Office 技能使用打包的 `docx` 与 `exceljs` 依赖运行内置 JavaScript 生成器，再通过 `register_artifact` 把二进制输出加入 Session 的**成果**视图。浏览器调研会组合既有 `web_search`、`web_fetch` 与文本文件工具，生成带引用的 Markdown 成果。浏览器任务使用可见的临时 Electron 窗口，在审批后与无需凭据的公共页面交互；它支持打开页面、观察 ARIA 状态、按确切无障碍目标点击／填写／选择、执行有界等待和显式关闭。
 
 **成果**视图从持久的成功修改与登记调用中重建 registry，不维护独立数据库。重新加载和历史分页会重放同一批 Session 事件，文件操作复用已有的 workspace 感知 Host 打开器。
 
@@ -40,6 +40,6 @@ Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` �
 - 其他进程占用固定端口 `37615` 时，应用会明确报错并停止。
 - macOS 产物未签名，也未经过 notarization（公证）；Windows 产物未签名。
 - 签名、更新、托盘行为以及最后一个窗口关闭后的后台执行尚未实现。
-- 浏览器调研能够获取并汇总网页，但不能点击、填写、登录或控制交互式浏览器会话。
+- 浏览器任务不支持登录、凭据、私有页面、上传、下载、弹窗、截图、标签页、任意脚本或坐标式交互。
 - 内置 Office 工作流能够创建新的 DOCX 与 XLSX 文件；编辑现有 Office 文档、通过 Office 引擎重算工作簿公式以及生成 PPTX 尚未实现。
 - 桌面载体使用已鉴权的 loopback HTTP 与 WebSocket 通信，不提供 TLS，也不使用 Electron IPC 传输。

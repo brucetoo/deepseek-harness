@@ -20,6 +20,10 @@ import {
   classifyNavigation,
   type RequestHeaders,
 } from './security.ts'
+import {
+  isBrowserWorkerProcess,
+  runBrowserWorker,
+} from './browser-worker.ts'
 
 /** Minimal cancellable event required by navigation and quit policy. */
 export interface NavigationEvent {
@@ -355,6 +359,8 @@ export interface DesktopSidecarPathOptions {
 export interface DesktopSidecarOptionsInput extends DesktopSidecarPathOptions {
   /** Electron application-data directory reserved for this desktop application. */
   readonly userDataPath: string
+  /** Current Electron executable used to launch isolated browser workers. */
+  readonly electronExecutable: string
 }
 
 /**
@@ -407,6 +413,9 @@ export const createDesktopSidecarOptions = (
       ...paths,
       bundledSkillDirectory: resolve(dirname(paths.nodeExecutable), '../../app/skills'),
       harnessHome: resolve(input.userDataPath, 'dsh'),
+      browserElectronExecutable: resolve(input.electronExecutable),
+      browserApplicationEntry: resolve(input.appPath),
+      browserTempRoot: resolve(input.userDataPath, 'browser'),
       startupTimeoutMs: 10_000,
       readinessConfirmationMs: 100,
       stderrTailBytes: 8_192,
@@ -528,12 +537,16 @@ const defaultSidecarOptions = (
     resourcesPath: process.resourcesPath,
     appPath: electron.app.getAppPath(),
     userDataPath: electron.app.getPath('userData'),
+    electronExecutable: process.execPath,
     platform: process.platform,
     stageRootOverride: process.env.DSH_DESKTOP_SIDECAR_ROOT,
   })
 
 if (Object.hasOwn(process.versions, 'electron')) {
-  void import('electron').then(electron =>
-    startDesktop(createElectronRuntime(electron, defaultSidecarOptions(electron))),
-  )
+  void import('electron').then((electron) => {
+    if (isBrowserWorkerProcess(process.argv)) {
+      return runBrowserWorker(electron)
+    }
+    return startDesktop(createElectronRuntime(electron, defaultSidecarOptions(electron)))
+  })
 }

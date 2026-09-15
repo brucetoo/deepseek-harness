@@ -521,6 +521,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
   },
   {
+    key: 'browser',
+    pkg: 'browser',
+    title: 'Visible public-browser automation',
+    mode: 'seam',
+    implementations: ['browser-playwright-electron'],
+    consumers: ['tool-browser'],
+    note: 'The Electron Provider owns one ephemeral visible browser and exact prepared elements; tool-browser exposes bounded observation and one-shot-approved actions.',
+  },
+  {
     key: 'spillStore',
     pkg: 'spill',
     title: 'Spill storage seam',

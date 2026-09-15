@@ -58,6 +58,8 @@ const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|app
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
+  '@deepseek-ai/dsh-desktop': ['lib/types/src/*.js', 'build'],
+  '@deepseek-ai/dsh-desktop-runtime': ['skills'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
@@ -164,6 +166,11 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
 
+/** Packages whose exported emitted-tree module is standalone. */
+const emittedTreeFileOverrides: Readonly<Record<string, readonly string[]>> = {
+  '@deepseek-ai/dsh-feishu-hitl-notifier': ['lib/types/types.js'],
+}
+
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
   return !!actual && actual.length === expected.length && actual.every((value, index) => value === expected[index])
 }
@@ -199,7 +206,9 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     // browser-safe source channels rehomed off src so plain Node can import
     // them without type stripping) publish the emitted JS alongside the
     // declarations.
-    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
+    ...usesEmittedTreeDefaults(manifest)
+      ? (manifest.name ? emittedTreeFileOverrides[manifest.name] : undefined) ?? ['lib/types/**/*.js']
+      : [],
     'lib/types/**/*.d.ts',
     ...hasExportPair(manifest, './typert', './lib/typert.host.d.ts', './lib/typert.host.js')
       ? ['lib/typert.host.js', 'lib/typert.host.d.ts']

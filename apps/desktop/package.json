@@ -2,11 +2,22 @@
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Desktop application lifecycle and packaging",
   "version": "0.1.1-rc.2",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
   "type": "module",
   "author": "DeepSeek AI",
   "license": "MIT",
   "main": "lib/types/src/main.js",
+  "files": [
+    "lib/types/src/*.js",
+    "build"
+  ],
   "devDependencies": {
     "electron": "44.3.0",
     "exceljs": "^4.4.0",
