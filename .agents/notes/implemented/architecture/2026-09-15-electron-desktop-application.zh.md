@@ -12,7 +12,7 @@ GUI 架构曾为 Electron IPC 载体预留位置，但先实现它会重复建�
 
 ## Decision
 
-`apps/desktop` 是一个 Electron 应用，包含一个加固的 `BrowserWindow` 和一个独立的纯 Node Host sidecar。已交付的开发产物以未签名的 macOS arm64 为目标。Windows 软件包通过对等的运行时与应用验证前，不提供 Windows 支持。
+`apps/desktop` 是一个 Electron 应用，包含一个加固的 `BrowserWindow` 和一个独立的纯 Node Host sidecar。原生打包流程会生成未签名的 macOS arm64 与 Windows x64 开发产物。目标命令会拒绝不同的宿主平台、宿主架构或暂存运行时。
 
 sidecar 使用暂存的 `dsh web` 入口在 `127.0.0.1:37615` 上运行，并禁用浏览器自动打开。每次启动都会创建一个 256 位 bearer token，并通过专用环境变量传入。当可选的 `bearerTokenEnv` 配置存在时，`dsh-host-webserver` 会在路由选择前要求每个 HTTP 请求和 WebSocket upgrade 携带精确的 `Authorization: Bearer <token>`。普通浏览器部署只有在配置该字段时才启用鉴权。
 
@@ -26,13 +26,13 @@ Electron session 只为精确的应用 HTTP 与 WebSocket origin 注入该标头
 
 每个候选版本记录源码 commit、锁文件 SHA-256 摘要、Node 版本、平台与架构。经过校验的候选版本会移动到 `.stage/versions/<id>`，随后由原子文件 `.stage/current` 选择供新的开发启动与打包使用的版本。已经运行的实例继续持有自己的不可变版本目录。
 
-打包模式解析 `process.resourcesPath/sidecar`；开发模式解析 `.stage/current` 选中的版本。`DSH_DESKTOP_SIDECAR_ROOT` 是唯一显式路径覆盖。两种模式都不会回退到环境中的 Node 可执行文件或 checkout 入口。Electron Builder 把选中的暂存版本放在 ASAR 外，并通过固定版本的本地 Electron 发行包生成未签名的 arm64 应用 bundle 与 ZIP 压缩包。
+打包模式解析 `process.resourcesPath/sidecar`；开发模式解析 `.stage/current` 选中的版本。`DSH_DESKTOP_SIDECAR_ROOT` 是唯一显式路径覆盖。两种模式都不会回退到环境中的 Node 可执行文件或 checkout 入口。Electron Builder 把选中的暂存版本放在 ASAR 外，并使用固定版本的本地 Electron 发行包。macOS 打包会生成 arm64 应用 bundle 与 ZIP 压缩包；Windows 打包会生成 x64 交互式单用户 NSIS 安装程序与 ZIP 压缩包。两个命令都会为各自的可分发文件写入 `SHA256SUMS`。
 
 ## Verification
 
 聚焦测试覆盖 bearer 鉴权、精确 origin 标头注入、导航策略、单实例行为、启动诊断、关闭升级、不可变暂存版本发布、闭包校验、打包配置和打包路径解析。暂存校验会加载 `node-pty` 与 `koffi`，并在清理后的环境中调用暂存 CLI。
 
-真实打包应用冒烟测试从 `.app` 启动，等待 React 界面就绪，关闭首次运行通知，通过鼠标事件打开 Settings，捕获已渲染窗口，经 Electron 浏览器生命周期退出，校验退出码为零和 sidecar 进程数量，并使用同一桌面数据目录再次启动。
+真实打包 macOS 应用的冒烟测试从 `.app` 启动，等待 React 界面就绪，关闭首次运行通知，通过鼠标事件打开 Settings，捕获已渲染窗口，经 Electron 浏览器生命周期退出，校验退出码为零和 sidecar 进程数量，并使用同一桌面数据目录再次启动。原生 Windows CI 会验证可分发文件的校验和与 ZIP 展开结果、静默安装 NSIS 软件包、检查内置暂存版本的元数据、启动已安装的可执行文件直至 Electron CDP 中出现其 React 页面、关闭窗口、要求退出码为零，并拒绝仍有 sidecar 监听器的结果。
 
 ## Alternatives considered
 
@@ -50,4 +50,4 @@ Electron session 只为精确的应用 HTTP 与 WebSocket origin 注入该标头
 
 桌面应用无需第二套传输实现，即可运行与浏览器应用相同的路由、流、bundle、资源和下载。代价是固定本地端口、应用专用 bearer 层、打包的 Node 运行时，以及明显大于系统 WebView 壳的产物体积。
 
-macOS 产物未签名，也未经过 notarization（公证）。打包流程会在校验平台、架构和版本后复制构建机器的 Node 可执行文件；签名分发需要获取目标平台运行时并校验完整性。更新、托盘行为、最后一个窗口关闭后的后台执行、Office 生成、浏览器自动化和云执行仍是独立产品能力，应通过插件实现，而不是写入 Electron 主进程逻辑。
+macOS 产物未签名，也未经过 notarization（公证）；Windows 安装程序与可执行文件同样未签名。打包流程会在校验平台、架构和版本后复制原生构建宿主的 Node 可执行文件。签名分发需要开发产物之外的平台凭据与发布来源证明。更新、托盘行为、最后一个窗口关闭后的后台执行、交互式浏览器自动化、Office 文档编辑、演示文稿生成和云执行仍是独立产品能力，应通过插件实现，而不是写入 Electron 主进程逻辑。

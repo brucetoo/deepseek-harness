@@ -91,6 +91,33 @@ describe('CI workflow', () => {
       isRecord(step) && typeof step.run === 'string'
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
+    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:package:win')
+    const desktopSmoke = nativeSteps.filter(isRecord).find(
+      step => step.name === 'Verify installed Windows desktop application',
+    )
+    expect(desktopSmoke).toMatchObject({
+      shell: 'pwsh',
+      run: './scripts/verify-desktop-windows.ps1',
+    })
+    const desktopSmokeScript = readFileSync(
+      resolve(root, 'scripts/verify-desktop-windows.ps1'),
+      'utf8',
+    )
+    expect(desktopSmokeScript).toContain('Expand-Archive')
+    expect(desktopSmokeScript).toContain('ConvertFrom-Json')
+    expect(desktopSmokeScript).toContain('Start-Process')
+    expect(desktopSmokeScript).toContain('/json/list')
+    expect(desktopSmokeScript).toContain('/json/close/')
+    expect(desktopSmokeScript).toContain('WaitForExit')
+    expect(nativeSteps.filter(isRecord).find(
+      step => step.uses === 'actions/upload-artifact@v4',
+    )).toMatchObject({
+      with: {
+        name: 'desktop-windows-x64',
+        path: 'apps/desktop/dist/DeepSeek-Harness-*-x64.exe\napps/desktop/dist/DeepSeek-Harness-*-x64.zip\napps/desktop/dist/SHA256SUMS\n',
+        'if-no-files-found': 'error',
+      },
+    })
 
     // wine-apt-cache: master-only, seeds the Wine apt cache, lives in ci-master.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")

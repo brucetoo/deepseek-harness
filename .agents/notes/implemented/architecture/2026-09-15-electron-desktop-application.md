@@ -12,7 +12,7 @@ The GUI architecture reserved an Electron IPC carrier, but implementing it first
 
 ## Decision
 
-`apps/desktop` is an Electron application with one hardened `BrowserWindow` and one independent plain-Node Host sidecar. The shipped developer artifact targets unsigned macOS arm64. Windows remains unsupported until a Windows package passes equivalent runtime and application verification.
+`apps/desktop` is an Electron application with one hardened `BrowserWindow` and one independent plain-Node Host sidecar. Native packaging produces unsigned macOS arm64 and Windows x64 developer artifacts. A target command rejects a different host platform, host architecture, or staged runtime.
 
 The sidecar runs the staged `dsh web` entry on `127.0.0.1:37615` with browser opening disabled. Each launch creates a 256-bit bearer token supplied through a dedicated environment variable. `dsh-host-webserver` requires the exact `Authorization: Bearer <token>` value for every HTTP request and WebSocket upgrade before route selection when its optional `bearerTokenEnv` config is present. Ordinary browser deployments remain unauthenticated unless they configure this field.
 
@@ -26,13 +26,13 @@ The application holds the single-instance lock before starting the Host. A secon
 
 Each candidate records the source commit, lockfile SHA-256 digest, Node version, platform, and architecture. A validated candidate moves to `.stage/versions/<id>`, then an atomic `.stage/current` file selects it for new development launches and packaging. Existing launches retain their immutable version directory.
 
-Packaged mode resolves `process.resourcesPath/sidecar`; development mode resolves the version selected by `.stage/current`. `DSH_DESKTOP_SIDECAR_ROOT` is the only explicit path override. Neither mode falls back to an ambient Node executable or checkout entrypoint. Electron Builder places the selected stage outside ASAR and emits an unsigned arm64 application bundle and ZIP archive from the pinned local Electron distribution.
+Packaged mode resolves `process.resourcesPath/sidecar`; development mode resolves the version selected by `.stage/current`. `DSH_DESKTOP_SIDECAR_ROOT` is the only explicit path override. Neither mode falls back to an ambient Node executable or checkout entrypoint. Electron Builder places the selected stage outside ASAR and uses the pinned local Electron distribution. macOS packaging emits an arm64 application bundle and ZIP archive. Windows packaging emits an x64 assisted per-user NSIS installer and ZIP archive. Both commands write `SHA256SUMS` for their distributable files.
 
 ## Verification
 
 Focused tests cover bearer authentication, exact-origin header injection, navigation policy, single-instance behavior, startup diagnostics, shutdown escalation, immutable stage publication, closure validation, package configuration, and packaged-path resolution. Stage validation loads `node-pty` and `koffi` and invokes the staged CLI under a scrubbed environment.
 
-A real packaged application smoke run starts from the `.app`, waits for the React interface, dismisses the first-run notice, opens Settings through a mouse event, captures the rendered window, exits through the Electron browser lifecycle, verifies exit code zero and sidecar process count, and repeats the launch against the same desktop data directory.
+A real packaged macOS application smoke run starts from the `.app`, waits for the React interface, dismisses the first-run notice, opens Settings through a mouse event, captures the rendered window, exits through the Electron browser lifecycle, verifies exit code zero and sidecar process count, and repeats the launch against the same desktop data directory. Native Windows CI verifies distributable checksums and ZIP expansion, silently installs the NSIS package, checks the embedded stage metadata, launches the installed executable until its React page appears through Electron CDP, closes the window, requires exit code zero, and rejects a remaining sidecar listener.
 
 ## Alternatives considered
 
@@ -50,4 +50,4 @@ A real packaged application smoke run starts from the `.app`, waits for the Reac
 
 The desktop application exercises the same routes, streams, bundles, assets, and downloads as the browser application without a second transport implementation. The cost is a fixed local port, an application-specific bearer layer, a bundled Node runtime, and a substantially larger artifact than a system-WebView shell.
 
-The macOS artifact is unsigned and unnotarized. Packaging copies the build machine's Node executable after validating platform, architecture, and version; signed distribution requires platform runtime acquisition with integrity verification. Updates, tray behavior, background execution after the last window closes, Office generation, browser automation, and cloud execution remain separate product capabilities implemented through plugins rather than Electron main-process logic.
+The macOS artifact is unsigned and unnotarized, and the Windows installer and executable are unsigned. Packaging copies the native build host's Node executable after validating platform, architecture, and version. Signed distribution requires platform credentials and release provenance beyond the developer artifacts. Updates, tray behavior, background execution after the last window closes, interactive browser automation, Office document editing, presentation generation, and cloud execution remain separate product capabilities implemented through plugins rather than Electron main-process logic.
