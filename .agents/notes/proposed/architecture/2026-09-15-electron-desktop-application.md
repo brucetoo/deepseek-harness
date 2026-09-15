@@ -26,9 +26,9 @@ The application is single-instance. A second launch focuses the existing window 
 
 ## Packaged runtime
 
-The staging command builds the Host packages and Web assets, creates an exact production dependency closure for `@deepseek-ai/dsh`, and places that closure plus a platform Node.js executable outside ASAR. Staging validates the CLI entry, Web assets, Cordis configuration, generated Remote modules, native dependencies, executable modes, and resolved symlinks before Electron packaging starts.
+The `desktop:stage` command builds the Host packages and Web assets, creates a filtered production dependency closure for `@deepseek-ai/dsh`, materializes deploy-time links, and places that closure plus an exact copy of `process.execPath` outside ASAR. Staging validates the CLI entry, Web assets, Cordis configuration, generated Remote modules, native dependencies, executable mode, Node.js version, and symlink containment before publishing the candidate. Publication renames the prior stage to a backup and restores it if the candidate rename fails.
 
-The staged metadata records the source commit, lockfile digest, Node.js version, platform, and architecture. The desktop main process resolves only staged paths in packaged mode and refuses a partial stage. Development mode may use the checkout entrypoints, but the packaged smoke test must launch with the staged runtime and a scrubbed environment that does not depend on the checkout's `node_modules`, `PATH`, or Node.js installation.
+The staged metadata records the source commit, SHA-256 lockfile digest, Node.js version, platform, and architecture. The desktop main process resolves `process.resourcesPath/sidecar` in packaged mode and `apps/desktop/.stage` in development mode; `DSH_DESKTOP_SIDECAR_ROOT` is the only explicit path override. Neither mode falls back to an ambient Node.js executable or checkout entrypoint. The packaged smoke test must launch with the staged runtime and a scrubbed environment that does not depend on the checkout's `node_modules`, `PATH`, or Node.js installation.
 
 ## Delivery phases
 

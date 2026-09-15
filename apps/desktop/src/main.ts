@@ -340,6 +340,38 @@ export interface ElectronRuntimeOptions {
   readonly sidecarDependencies?: Partial<SidecarDependencies>
 }
 
+/** Inputs used to locate the staged Host runtime. */
+export interface DesktopSidecarPathOptions {
+  readonly isPackaged: boolean
+  readonly resourcesPath: string
+  readonly appPath: string
+  readonly platform: NodeJS.Platform
+  readonly stageRootOverride?: string | undefined
+}
+
+/**
+ * Resolve the bundled or development Host runtime without ambient executables.
+ * @param options - Electron installation paths, platform, and optional stage override.
+ * @returns Executable and CLI paths within one stage root.
+ */
+export const resolveDesktopSidecarPaths = (
+  options: DesktopSidecarPathOptions,
+): Pick<SidecarSupervisorOptions, 'nodeExecutable' | 'cliEntry'> => {
+  const stageRoot = options.stageRootOverride === undefined
+    ? options.isPackaged
+      ? resolve(options.resourcesPath, 'sidecar')
+      : resolve(options.appPath, '.stage')
+    : resolve(options.stageRootOverride)
+  return {
+    nodeExecutable: resolve(
+      stageRoot,
+      'node/bin',
+      options.platform === 'win32' ? 'node.exe' : 'node',
+    ),
+    cliEntry: resolve(stageRoot, 'app/lib/bin.js'),
+  }
+}
+
 const adaptWindow = (window: ElectronBrowserWindow): DesktopWindow => ({
   webContents: {
     installBeforeSendHeaders: (filter, listener) => {
@@ -445,18 +477,26 @@ export const createElectronRuntime = (
 
 const defaultSidecarOptions = (
   electron: ElectronModule,
-): ElectronRuntimeOptions => ({
-  sidecar: {
-    nodeExecutable: process.env.DSH_DESKTOP_NODE_EXECUTABLE ?? 'node',
-    cliEntry: resolve(electron.app.getAppPath(), '../cli/lib/bin.js'),
-    startupTimeoutMs: 10_000,
-    readinessConfirmationMs: 100,
-    stderrTailBytes: 8_192,
-    shutdownGraceMs: 2_000,
-    terminationGraceMs: 2_000,
-    killGraceMs: 1_000,
-  },
-})
+): ElectronRuntimeOptions => {
+  const sidecarPaths = resolveDesktopSidecarPaths({
+    isPackaged: electron.app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: electron.app.getAppPath(),
+    platform: process.platform,
+    stageRootOverride: process.env.DSH_DESKTOP_SIDECAR_ROOT,
+  })
+  return {
+    sidecar: {
+      ...sidecarPaths,
+      startupTimeoutMs: 10_000,
+      readinessConfirmationMs: 100,
+      stderrTailBytes: 8_192,
+      shutdownGraceMs: 2_000,
+      terminationGraceMs: 2_000,
+      killGraceMs: 1_000,
+    },
+  }
+}
 
 if (Object.hasOwn(process.versions, 'electron')) {
   void import('electron').then(electron =>

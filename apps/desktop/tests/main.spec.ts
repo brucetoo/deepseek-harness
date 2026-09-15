@@ -1,6 +1,8 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createLaunchToken,
+  resolveDesktopSidecarPaths,
   startDesktop,
   type BeforeSendHeadersListener,
   type BrowserWindowOptions,
@@ -188,6 +190,45 @@ const createHarness = (options: {
 const flushPromises = async (): Promise<void> => {
   await new Promise<void>(resolve => setImmediate(resolve))
 }
+
+describe('desktop sidecar paths', () => {
+  it('resolves packaged runtimes only from the Electron resources directory', () => {
+    expect(resolveDesktopSidecarPaths({
+      isPackaged: true,
+      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
+      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+      platform: 'darwin',
+    })).toEqual({
+      nodeExecutable: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/node/bin/node',
+      cliEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/lib/bin.js',
+    })
+  })
+
+  it('resolves development runtimes from apps/desktop/.stage', () => {
+    expect(resolveDesktopSidecarPaths({
+      isPackaged: false,
+      resourcesPath: '/electron/resources',
+      appPath: '/checkout/apps/desktop',
+      platform: process.platform,
+    })).toEqual({
+      nodeExecutable: join('/checkout/apps/desktop/.stage/node/bin', process.platform === 'win32' ? 'node.exe' : 'node'),
+      cliEntry: '/checkout/apps/desktop/.stage/app/lib/bin.js',
+    })
+  })
+
+  it('uses one explicit stage-root override for either launch mode', () => {
+    expect(resolveDesktopSidecarPaths({
+      isPackaged: true,
+      resourcesPath: '/ignored/resources',
+      appPath: '/ignored/app',
+      platform: 'win32',
+      stageRootOverride: '/custom/sidecar',
+    })).toEqual({
+      nodeExecutable: '/custom/sidecar/node/bin/node.exe',
+      cliEntry: '/custom/sidecar/app/lib/bin.js',
+    })
+  })
+})
 
 describe('desktop main process startup', () => {
   it('takes the single-instance lock before creating a sidecar', async () => {

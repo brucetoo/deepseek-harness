@@ -76,6 +76,21 @@ describe('RepositoryCleaner', () => {
     expect(existsSync(join(root, 'native/landlock-run/tsconfig.tsbuildinfo'))).toBe(false)
   })
 
+  it('removes desktop staging directories owned by the repository', async () => {
+    const root = fixture()
+    write(join(root, 'tsconfig.json'), JSON.stringify({ include: ['src'] }))
+    write(join(root, 'src/index.ts'), 'export {}\n')
+    write(join(root, 'apps/desktop/.stage/app/lib/bin.js'))
+    write(join(root, 'apps/desktop/.stage.tmp-interrupted/app/lib/bin.js'))
+    write(join(root, 'apps/desktop/.stage.backup-interrupted/app/lib/bin.js'))
+
+    await new RepositoryCleaner(root).clean()
+
+    expect(existsSync(join(root, 'apps/desktop/.stage'))).toBe(false)
+    expect(existsSync(join(root, 'apps/desktop/.stage.tmp-interrupted'))).toBe(false)
+    expect(existsSync(join(root, 'apps/desktop/.stage.backup-interrupted'))).toBe(false)
+  })
+
   it('refuses project outputs reached through a symlink outside the repository', async () => {
     const root = fixture()
     const externalProject = fixture()

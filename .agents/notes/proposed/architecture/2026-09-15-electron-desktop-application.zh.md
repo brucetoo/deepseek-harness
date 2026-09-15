@@ -26,9 +26,9 @@ Electron session 只为精确的 `http://127.0.0.1:37615` origin 注入 bearer �
 
 ## Packaged runtime
 
-暂存命令构建 Host 包和 Web 资源，为 `@deepseek-ai/dsh` 创建精确的生产依赖闭包，并把该闭包与平台 Node.js 可执行文件放在 ASAR 外。Electron 打包开始前，暂存流程校验 CLI 入口、Web 资源、Cordis 配置、生成的 Remote 模块、原生依赖、可执行权限和已解析的符号链接。
+`desktop:stage` 命令构建 Host 包和 Web 资源，为 `@deepseek-ai/dsh` 创建经过筛选的生产依赖闭包，将部署时链接实体化，并把该闭包与 `process.execPath` 的精确副本放在 ASAR 外。暂存流程在发布候选目录前校验 CLI 入口、Web 资源、Cordis 配置、生成的 Remote 模块、原生依赖、可执行权限、Node.js 版本和符号链接包含关系。发布时先把原暂存目录重命名为备份；如果候选目录重命名失败，则恢复原目录。
 
-暂存元数据记录源码 commit、锁文件摘要、Node.js 版本、平台与架构。桌面主进程在打包模式下只解析暂存路径，并拒绝不完整暂存。开发模式可以使用 checkout 入口，但打包冒烟测试必须使用暂存运行时和清理后的环境启动，不依赖 checkout 的 `node_modules`、`PATH` 或 Node.js 安装。
+暂存元数据记录源码 commit、锁文件 SHA-256 摘要、Node.js 版本、平台与架构。桌面主进程在打包模式下解析 `process.resourcesPath/sidecar`，在开发模式下解析 `apps/desktop/.stage`；`DSH_DESKTOP_SIDECAR_ROOT` 是唯一显式路径覆盖。两种模式都不会回退到环境中的 Node.js 可执行文件或 checkout 入口。打包冒烟测试必须使用暂存运行时和清理后的环境启动，不依赖 checkout 的 `node_modules`、`PATH` 或 Node.js 安装。
 
 ## Delivery phases
 
