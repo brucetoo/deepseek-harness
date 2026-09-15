@@ -5,7 +5,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -19,6 +18,7 @@ import {
   createDesktopStageMetadata,
   executeDesktopStage,
   publishDesktopStage,
+  removeDesktopStagePath,
   validateDesktopStage,
   type DesktopStageMetadata,
 } from './stage-desktop.ts'
@@ -33,9 +33,9 @@ const metadata: DesktopStageMetadata = {
 }
 
 const requiredFiles = [
-  'app/lib/bin.js',
-  'app/config/agent-presets/standard/preset.yml',
-  'app/config/agent-presets/standard/agent.cordis.yml',
+  'app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+  'app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/preset.yml',
+  'app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/agent.cordis.yml',
   'app/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml',
   'app/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml',
   'app/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
@@ -78,7 +78,7 @@ const createValidStage = (parent = fixtureRoot()): string => {
 const populateValidStage = (stage: string): void => {
   for (const path of requiredFiles) write(join(stage, path))
   write(join(stage, 'app/package.json'), JSON.stringify({
-    name: '@deepseek-ai/dsh',
+    name: '@deepseek-ai/dsh-desktop-runtime',
     type: 'module',
   }))
   createPackage(stage, 'node-pty')
@@ -92,6 +92,8 @@ const populateValidStage = (stage: string): void => {
 const validate = (stage: string, expected = metadata): Promise<void> =>
   validateDesktopStage(stage, expected, {
     readNodeVersion: vi.fn(async () => metadata.nodeVersion),
+    loadNativeDependencies: vi.fn(async () => {}),
+    runCliSmoke: vi.fn(async () => {}),
   })
 
 afterEach(() => {
@@ -114,7 +116,9 @@ describe('desktop stage planning', () => {
       root,
       stageDirectory: '/checkout/apps/desktop/.stage',
       temporaryDirectory: '/checkout/apps/desktop/.stage.tmp-fixture',
-      backupDirectory: '/checkout/apps/desktop/.stage.backup-fixture',
+      versionDirectory: '/checkout/apps/desktop/.stage/versions/fixture',
+      currentFile: '/checkout/apps/desktop/.stage/current',
+      versionName: 'fixture',
       sourceNodeExecutable: '/runtime/bin/node',
       metadata,
       commands: {
@@ -128,13 +132,12 @@ describe('desktop stage planning', () => {
           args: [
             '/pnpm.cjs',
             '--filter',
-            '@deepseek-ai/dsh',
+            '@deepseek-ai/dsh-desktop-runtime',
             'deploy',
-            '--legacy',
             '--prod',
+            '--ignore-scripts',
             '--config.node-linker=hoisted',
-            '--config.auto-install-peers=false',
-            '--config.link-workspace-packages=true',
+            '--config.inject-workspace-packages=true',
             '/checkout/apps/desktop/.stage.tmp-fixture/app',
           ],
           cwd: root,
@@ -169,9 +172,9 @@ describe('desktop stage validation', () => {
 
   it.each([
     ['Node executable', `node/bin/${process.platform === 'win32' ? 'node.exe' : 'node'}`],
-    ['CLI entry', 'app/lib/bin.js'],
-    ['standard preset', 'app/config/agent-presets/standard/preset.yml'],
-    ['standard agent composition', 'app/config/agent-presets/standard/agent.cordis.yml'],
+    ['CLI entry', 'app/node_modules/@deepseek-ai/dsh/lib/bin.js'],
+    ['standard preset', 'app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/preset.yml'],
+    ['standard agent composition', 'app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/agent.cordis.yml'],
     ['base composition', 'app/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml'],
     ['Web composition', 'app/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml'],
     ['Web dist index', 'app/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'],
@@ -203,7 +206,33 @@ describe('desktop stage validation', () => {
 
     await expect(validateDesktopStage(stage, metadata, {
       readNodeVersion: async () => 'v22.19.0',
+      loadNativeDependencies: async () => {},
+      runCliSmoke: async () => {},
     })).rejects.toThrow('Node version mismatch')
+  })
+
+  it('rejects a native dependency that cannot load in the staged Node runtime', async () => {
+    const stage = createValidStage()
+
+    await expect(validateDesktopStage(stage, metadata, {
+      readNodeVersion: async () => metadata.nodeVersion,
+      loadNativeDependencies: async () => {
+        throw new Error('dlopen failed')
+      },
+      runCliSmoke: async () => {},
+    })).rejects.toThrow('staged native dependencies failed to load: dlopen failed')
+  })
+
+  it('rejects a staged CLI that cannot start without the checkout', async () => {
+    const stage = createValidStage()
+
+    await expect(validateDesktopStage(stage, metadata, {
+      readNodeVersion: async () => metadata.nodeVersion,
+      loadNativeDependencies: async () => {},
+      runCliSmoke: async () => {
+        throw new Error('missing peer')
+      },
+    })).rejects.toThrow('staged CLI smoke failed: missing peer')
   })
 
   it.each([
@@ -238,52 +267,77 @@ describe('desktop stage validation', () => {
 
   it('accepts a symlink whose resolved target stays in the stage', async () => {
     const stage = createValidStage()
-    symlinkSync('lib/bin.js', join(stage, 'app/cli-link'))
+    symlinkSync('node_modules/@deepseek-ai/dsh/lib/bin.js', join(stage, 'app/cli-link'))
 
     await expect(validate(stage)).resolves.toBeUndefined()
   })
 })
 
 describe('desktop stage publication', () => {
-  it('replaces an existing stage and removes its backup', async () => {
+  it('publishes a version before atomically replacing the current pointer', async () => {
     const parent = fixtureRoot()
-    const final = join(parent, '.stage')
+    const stage = join(parent, '.stage')
     const temporary = join(parent, '.stage.tmp')
-    const backup = join(parent, '.stage.backup')
-    write(join(final, 'marker'), 'old')
+    const version = join(stage, 'versions/new')
+    const current = join(stage, 'current')
+    write(current, 'old\n')
     write(join(temporary, 'marker'), 'new')
 
-    await publishDesktopStage({ stageDirectory: final, temporaryDirectory: temporary, backupDirectory: backup })
+    await publishDesktopStage({
+      stageDirectory: stage,
+      temporaryDirectory: temporary,
+      versionDirectory: version,
+      currentFile: current,
+      versionName: 'new',
+    })
 
-    expect(readFileSync(join(final, 'marker'), 'utf8')).toBe('new')
+    expect(readFileSync(join(version, 'marker'), 'utf8')).toBe('new')
+    expect(readFileSync(current, 'utf8')).toBe('new\n')
     expect(existsSync(temporary)).toBe(false)
-    expect(existsSync(backup)).toBe(false)
   })
 
-  it('restores the previous stage when final publication fails', async () => {
+  it('keeps the previous pointer when atomic pointer publication fails', async () => {
     const parent = fixtureRoot()
-    const final = join(parent, '.stage')
+    const stage = join(parent, '.stage')
     const temporary = join(parent, '.stage.tmp')
-    const backup = join(parent, '.stage.backup')
-    write(join(final, 'marker'), 'old')
+    const version = join(stage, 'versions/new')
+    const current = join(stage, 'current')
+    write(current, 'old\n')
     write(join(temporary, 'marker'), 'new')
-    let calls = 0
 
     await expect(publishDesktopStage(
-      { stageDirectory: final, temporaryDirectory: temporary, backupDirectory: backup },
       {
-        rename: async (source, destination) => {
-          calls += 1
-          if (calls === 2) throw new Error('injected publication failure')
-          const { rename } = await import('node:fs/promises')
-          await rename(source, destination)
+        stageDirectory: stage,
+        temporaryDirectory: temporary,
+        versionDirectory: version,
+        currentFile: current,
+        versionName: 'new',
+      },
+      {
+        writeCurrent: async () => {
+          throw new Error('injected publication failure')
         },
       },
     )).rejects.toThrow('injected publication failure')
 
-    expect(readFileSync(join(final, 'marker'), 'utf8')).toBe('old')
-    expect(readFileSync(join(temporary, 'marker'), 'utf8')).toBe('new')
-    expect(existsSync(backup)).toBe(false)
+    expect(readFileSync(current, 'utf8')).toBe('old\n')
+    expect(existsSync(version)).toBe(false)
+    expect(existsSync(temporary)).toBe(false)
+  })
+})
+
+describe('desktop stage cleanup', () => {
+  it('unlinks a directory symlink without traversing its target', async () => {
+    const parent = fixtureRoot()
+    const outside = join(parent, 'outside')
+    const link = join(parent, 'candidate')
+    write(join(outside, 'keep'), 'outside')
+    symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+
+    await removeDesktopStagePath(link)
+
+    expect(existsSync(link)).toBe(false)
+    expect(readFileSync(join(outside, 'keep'), 'utf8')).toBe('outside')
   })
 })
 
@@ -311,17 +365,19 @@ describe('desktop stage execution', () => {
         expect(nodeExecutable).toBe(join(plan.temporaryDirectory, 'node/bin', process.platform === 'win32' ? 'node.exe' : 'node'))
         return metadata.nodeVersion
       },
+      loadNativeDependencies: async () => {},
+      runCliSmoke: async () => {},
     })
 
     expect(commands).toEqual([plan.commands.build, plan.commands.deploy])
-    const stagedNode = join(plan.stageDirectory, 'node/bin', process.platform === 'win32' ? 'node.exe' : 'node')
+    const stagedNode = join(plan.versionDirectory, 'node/bin', process.platform === 'win32' ? 'node.exe' : 'node')
     expect(readFileSync(stagedNode, 'utf8')).toBe('exact-node-runtime')
     if (process.platform !== 'win32') {
       expect(statSync(stagedNode).mode & 0o777).toBe(statSync(sourceNode).mode & 0o777)
     }
-    expect(JSON.parse(readFileSync(join(plan.stageDirectory, 'metadata.json'), 'utf8'))).toEqual(metadata)
+    expect(JSON.parse(readFileSync(join(plan.versionDirectory, 'metadata.json'), 'utf8'))).toEqual(metadata)
     expect(existsSync(plan.temporaryDirectory)).toBe(false)
-    expect(existsSync(plan.backupDirectory)).toBe(false)
+    expect(readFileSync(plan.currentFile, 'utf8')).toBe(`${plan.versionName}\n`)
   })
 
   it('keeps the previous stage when candidate validation fails', async () => {
@@ -347,49 +403,12 @@ describe('desktop stage execution', () => {
         }
       },
       readNodeVersion: async () => metadata.nodeVersion,
+      loadNativeDependencies: async () => {},
+      runCliSmoke: async () => {},
     })).rejects.toThrow('CLI entry is missing')
 
     expect(readFileSync(join(plan.stageDirectory, 'marker'), 'utf8')).toBe('old')
     expect(existsSync(plan.temporaryDirectory)).toBe(false)
-    expect(existsSync(plan.backupDirectory)).toBe(false)
   })
 
-  it('restores deploy-hoisted dependencies and materializes checkout links', async () => {
-    const root = fixtureRoot()
-    const sourceNode = join(root, 'runtime/node')
-    write(sourceNode, 'node')
-    if (process.platform !== 'win32') chmodSync(sourceNode, 0o755)
-    const sourceDependency = join(root, 'apps/cli/node_modules/direct-dependency')
-    write(join(sourceDependency, 'package.json'), JSON.stringify({ name: 'direct-dependency' }))
-    write(join(sourceDependency, 'index.js'), 'export const deployed = true\n')
-    const linkedPackage = join(root, 'packages/linked')
-    write(join(linkedPackage, 'package.json'), JSON.stringify({ name: 'linked-package' }))
-    write(join(linkedPackage, 'index.js'), 'export const linked = true\n')
-    const plan = createDesktopStagePlan({
-      root,
-      sourceNodeExecutable: sourceNode,
-      metadata,
-      temporaryId: 'materialize',
-      pnpm: { command: sourceNode, args: ['/pnpm.cjs'] },
-    })
-
-    await executeDesktopStage(plan, {
-      run: async (command) => {
-        if (command !== plan.commands.deploy) return
-        populateValidStage(plan.temporaryDirectory)
-        write(join(plan.temporaryDirectory, 'app/package.json'), JSON.stringify({
-          name: '@deepseek-ai/dsh',
-          dependencies: { 'direct-dependency': '1.0.0' },
-        }))
-        symlinkSync(linkedPackage, join(plan.temporaryDirectory, 'app/node_modules/linked-package'))
-      },
-      readNodeVersion: async () => metadata.nodeVersion,
-    })
-
-    expect(readFileSync(join(plan.stageDirectory, 'app/node_modules/direct-dependency/index.js'), 'utf8'))
-      .toBe('export const deployed = true\n')
-    expect(readFileSync(join(plan.stageDirectory, 'app/node_modules/linked-package/index.js'), 'utf8'))
-      .toBe('export const linked = true\n')
-    expect(() => readlinkSync(join(plan.stageDirectory, 'app/node_modules/linked-package'))).toThrow()
-  })
 })

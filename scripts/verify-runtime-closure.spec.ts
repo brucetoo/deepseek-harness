@@ -162,4 +162,25 @@ describe('verifyRuntimeClosure', () => {
     expect(result.workspacePackageCount).toBe(1)
     expect(result.failures).toEqual(['runtime -> @scope/root -> @scope/required'])
   })
+
+  it('traverses application packages referenced by a deploy root', async () => {
+    const root = fixture({
+      'apps/desktop-runtime/package.json': {
+        name: 'runtime',
+        dependencies: { '@scope/cli': 'workspace:^' },
+      },
+      'apps/cli/package.json': {
+        name: '@scope/cli',
+        peerDependencies: { '@scope/required': 'workspace:^' },
+      },
+      'python/sdk-runtime/platforms.json': platforms,
+      'apps/cli/config/agent-presets/minimal/agent.cordis.yml': '[]\n',
+    })
+    workspace(root, '@scope/required', {})
+
+    const result = await verifyRuntimeClosure(root, 'apps/desktop-runtime/package.json')
+
+    expect(result.workspacePackageCount).toBe(1)
+    expect(result.failures).toEqual(['runtime -> @scope/cli -> @scope/required'])
+  })
 })

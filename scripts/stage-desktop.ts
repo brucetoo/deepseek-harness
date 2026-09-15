@@ -6,7 +6,6 @@ import { constants } from 'node:fs'
 import {
   access,
   chmod,
-  cp,
   copyFile,
   lstat,
   mkdir,
@@ -16,11 +15,13 @@ import {
   rename,
   rm,
   stat,
+  unlink,
   writeFile,
 } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 const execFileAsync = promisify(execFile)
 
@@ -72,7 +73,9 @@ export interface DesktopStagePlan {
   readonly root: string
   readonly stageDirectory: string
   readonly temporaryDirectory: string
-  readonly backupDirectory: string
+  readonly versionDirectory: string
+  readonly currentFile: string
+  readonly versionName: string
   readonly sourceNodeExecutable: string
   readonly metadata: DesktopStageMetadata
   readonly commands: {
@@ -108,7 +111,9 @@ export const createDesktopStagePlan = (
     root,
     stageDirectory,
     temporaryDirectory,
-    backupDirectory: join(root, `apps/desktop/.stage.backup-${options.temporaryId}`),
+    versionDirectory: join(stageDirectory, 'versions', options.temporaryId),
+    currentFile: join(stageDirectory, 'current'),
+    versionName: options.temporaryId,
     sourceNodeExecutable: options.sourceNodeExecutable,
     metadata: options.metadata,
     commands: {
@@ -122,13 +127,12 @@ export const createDesktopStagePlan = (
         args: [
           ...options.pnpm.args,
           '--filter',
-          '@deepseek-ai/dsh',
+          '@deepseek-ai/dsh-desktop-runtime',
           'deploy',
-          '--legacy',
           '--prod',
+          '--ignore-scripts',
           '--config.node-linker=hoisted',
-          '--config.auto-install-peers=false',
-          '--config.link-workspace-packages=true',
+          '--config.inject-workspace-packages=true',
           join(temporaryDirectory, 'app'),
         ],
         cwd: root,
@@ -139,9 +143,9 @@ export const createDesktopStagePlan = (
 
 const requiredFiles = new Map<string, string>([
   ['node/bin/node', 'Node executable'],
-  ['app/lib/bin.js', 'CLI entry'],
-  ['app/config/agent-presets/standard/preset.yml', 'standard preset'],
-  ['app/config/agent-presets/standard/agent.cordis.yml', 'standard agent composition'],
+  ['app/node_modules/@deepseek-ai/dsh/lib/bin.js', 'CLI entry'],
+  ['app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/preset.yml', 'standard preset'],
+  ['app/node_modules/@deepseek-ai/dsh/config/agent-presets/standard/agent.cordis.yml', 'standard agent composition'],
   ['app/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml', 'base composition'],
   ['app/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml', 'Web composition'],
   ['app/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html', 'Web dist index'],
@@ -156,6 +160,9 @@ const requiredFiles = new Map<string, string>([
 
 const isMissing = (error: unknown): boolean =>
   error instanceof Error && 'code' in error && error.code === 'ENOENT'
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
 
 const assertFile = async (path: string, label: string): Promise<void> => {
   try {
@@ -209,6 +216,8 @@ const assertContainedSymlinks = async (stage: string): Promise<void> => {
 /** Replaceable process probe used by stage validation. */
 export interface DesktopStageValidationDependencies {
   readonly readNodeVersion?: (nodeExecutable: string) => Promise<string>
+  readonly loadNativeDependencies?: (nodeExecutable: string, appDirectory: string) => Promise<void>
+  readonly runCliSmoke?: (nodeExecutable: string, cliEntry: string, appDirectory: string) => Promise<void>
 }
 
 /**
@@ -262,127 +271,94 @@ export const validateDesktopStage = async (
       throw new Error(`Node version mismatch: expected ${expectedMetadata.nodeVersion}, received ${actualVersion}`)
     }
   }
+  const nodeExecutable = join(stage, nodeRelative)
+  const appDirectory = join(stage, 'app')
+  try {
+    await (dependencies.loadNativeDependencies ?? loadNativeDependencies)(
+      nodeExecutable,
+      appDirectory,
+    )
+  } catch (error) {
+    throw new Error(
+      `staged native dependencies failed to load: ${errorMessage(error)}`,
+      { cause: error },
+    )
+  }
+  try {
+    await (dependencies.runCliSmoke ?? runCliSmoke)(
+      nodeExecutable,
+      join(appDirectory, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
+      appDirectory,
+    )
+  } catch (error) {
+    throw new Error(`staged CLI smoke failed: ${errorMessage(error)}`, {
+      cause: error,
+    })
+  }
 }
 
 /** Paths participating in atomic stage publication. */
 export interface DesktopStagePublication {
   readonly stageDirectory: string
   readonly temporaryDirectory: string
-  readonly backupDirectory: string
+  readonly versionDirectory: string
+  readonly currentFile: string
+  readonly versionName: string
 }
 
 /** Replaceable filesystem operation used to test publication rollback. */
 export interface DesktopStagePublicationDependencies {
-  readonly rename?: (source: string, destination: string) => Promise<void>
+  readonly writeCurrent?: (path: string, content: string) => Promise<void>
 }
 
 /**
- * Publish a validated temporary stage while preserving the previous stage on failure.
- * @param paths - Final, temporary, and backup stage paths.
- * @param dependencies - Optional rename operation.
+ * Publish an immutable stage version, then atomically select it for new launches.
+ * @param paths - Container, candidate, version, and current-pointer paths.
+ * @param dependencies - Optional atomic pointer writer.
  */
 export const publishDesktopStage = async (
   paths: DesktopStagePublication,
   dependencies: DesktopStagePublicationDependencies = {},
 ): Promise<void> => {
-  const move = dependencies.rename ?? rename
-  let backedUp = false
+  await mkdir(resolve(paths.versionDirectory, '..'), { recursive: true })
+  await removeDesktopStagePath(paths.versionDirectory)
+  await rename(paths.temporaryDirectory, paths.versionDirectory)
+  const writeCurrent = dependencies.writeCurrent
+    ?? ((path: string, content: string) =>
+      writeFileAtomic(path, content, { mode: 0o600 }))
   try {
-    await move(paths.stageDirectory, paths.backupDirectory)
-    backedUp = true
+    await writeCurrent(paths.currentFile, `${paths.versionName}\n`)
   } catch (error) {
-    if (!isMissing(error)) throw error
-  }
-
-  try {
-    await move(paths.temporaryDirectory, paths.stageDirectory)
-  } catch (error) {
-    if (backedUp) await move(paths.backupDirectory, paths.stageDirectory)
+    await removeDesktopStagePath(paths.versionDirectory)
     throw error
   }
-  if (backedUp) await rm(paths.backupDirectory, { recursive: true, force: true })
 }
 
 /** Replaceable effects used by the staging executor. */
 export interface DesktopStageExecutionDependencies {
   readonly run: (command: DesktopStageCommand) => Promise<void>
   readonly readNodeVersion: (nodeExecutable: string) => Promise<string>
+  readonly loadNativeDependencies: (nodeExecutable: string, appDirectory: string) => Promise<void>
+  readonly runCliSmoke: (nodeExecutable: string, cliEntry: string, appDirectory: string) => Promise<void>
 }
 
-const findSymlink = async (directory: string): Promise<string | undefined> => {
-  let entries
+/**
+ * Remove one owned stage path without traversing a directory link.
+ * @param path - Candidate path owned by the staging workflow.
+ */
+export const removeDesktopStagePath = async (path: string): Promise<void> => {
+  let metadata
   try {
-    entries = await readdir(directory, { withFileTypes: true })
+    metadata = await lstat(path)
   } catch (error) {
-    if (isMissing(error)) return undefined
+    if (isMissing(error)) return
     throw error
   }
-  for (const entry of entries) {
-    const path = join(directory, entry.name)
-    if (entry.isSymbolicLink()) return path
-    if (entry.isDirectory()) {
-      const nested = await findSymlink(path)
-      if (nested !== undefined) return nested
-    }
+  if (metadata.isSymbolicLink()) {
+    await unlink(path)
+    return
   }
-  return undefined
-}
-
-const copyPackageWithoutNestedDependencies = async (
-  source: string,
-  destination: string,
-): Promise<void> => {
-  const nestedNodeModules = join(source, 'node_modules')
-  await cp(source, destination, {
-    recursive: true,
-    dereference: true,
-    filter: path => path !== nestedNodeModules && !path.startsWith(`${nestedNodeModules}${sep}`),
-  })
-}
-
-const prepareDeployedClosure = async (plan: DesktopStagePlan): Promise<void> => {
-  const app = join(plan.temporaryDirectory, 'app')
-  const manifest = JSON.parse(await readFile(join(app, 'package.json'), 'utf8')) as {
-    dependencies?: Record<string, string>
-  }
-  for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
-    const destination = join(app, 'node_modules', dependency)
-    try {
-      await lstat(destination)
-      continue
-    } catch (error) {
-      if (!isMissing(error)) throw error
-    }
-    const source = join(plan.root, 'apps/cli/node_modules', dependency)
-    try {
-      await lstat(source)
-    } catch (error) {
-      if (isMissing(error)) {
-        throw new Error(`deployed dependency ${dependency} is missing`)
-      }
-      throw error
-    }
-    await mkdir(resolve(destination, '..'), { recursive: true })
-    await copyPackageWithoutNestedDependencies(source, destination)
-  }
-
-  const nodeModules = join(app, 'node_modules')
-  let symlink = await findSymlink(nodeModules)
-  while (symlink !== undefined) {
-    const segments = relative(nodeModules, symlink).split(sep)
-    const binIndex = segments.lastIndexOf('.bin')
-    if (binIndex >= 0) {
-      await rm(join(nodeModules, ...segments.slice(0, binIndex + 1)), {
-        recursive: true,
-        force: true,
-      })
-    } else {
-      const source = await realpath(symlink)
-      await rm(symlink, { recursive: true, force: true })
-      await copyPackageWithoutNestedDependencies(source, symlink)
-    }
-    symlink = await findSymlink(nodeModules)
-  }
+  await rm(path, { recursive: true, force: true })
 }
 
 /**
@@ -394,12 +370,11 @@ export const executeDesktopStage = async (
   plan: DesktopStagePlan,
   dependencies: DesktopStageExecutionDependencies,
 ): Promise<void> => {
-  await rm(plan.temporaryDirectory, { recursive: true, force: true })
-  await rm(plan.backupDirectory, { recursive: true, force: true })
+  await removeDesktopStagePath(plan.temporaryDirectory)
+  await removeDesktopStagePath(plan.versionDirectory)
   try {
     await dependencies.run(plan.commands.build)
     await dependencies.run(plan.commands.deploy)
-    await prepareDeployedClosure(plan)
 
     const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
     const stagedNode = join(plan.temporaryDirectory, 'node/bin', nodeName)
@@ -414,9 +389,11 @@ export const executeDesktopStage = async (
     )
     await validateDesktopStage(plan.temporaryDirectory, plan.metadata, {
       readNodeVersion: dependencies.readNodeVersion,
+      loadNativeDependencies: dependencies.loadNativeDependencies,
+      runCliSmoke: dependencies.runCliSmoke,
     })
   } catch (error) {
-    await rm(plan.temporaryDirectory, { recursive: true, force: true })
+    await removeDesktopStagePath(plan.temporaryDirectory)
     throw error
   }
 
@@ -448,6 +425,45 @@ const readNodeVersion = async (nodeExecutable: string): Promise<string> => {
   return stdout.trim()
 }
 
+const scrubbedProbeEnvironment = (): NodeJS.ProcessEnv => ({
+  ...process.platform === 'win32' && process.env.SystemRoot !== undefined
+    ? { SystemRoot: process.env.SystemRoot }
+    : {},
+  ...process.env.HOME !== undefined ? { HOME: process.env.HOME } : {},
+  ...process.env.USERPROFILE !== undefined ? { USERPROFILE: process.env.USERPROFILE } : {},
+  ...process.env.TMPDIR !== undefined ? { TMPDIR: process.env.TMPDIR } : {},
+  ...process.env.TEMP !== undefined ? { TEMP: process.env.TEMP } : {},
+  ...process.env.TMP !== undefined ? { TMP: process.env.TMP } : {},
+})
+
+const loadNativeDependencies = async (
+  nodeExecutable: string,
+  appDirectory: string,
+): Promise<void> => {
+  const requireFrom = JSON.stringify(join(appDirectory, 'package.json'))
+  const script = [
+    "import { createRequire } from 'node:module'",
+    `const require = createRequire(${requireFrom})`,
+    "require('node-pty')",
+    "require('koffi')",
+  ].join(';')
+  await execFileAsync(nodeExecutable, ['--input-type=module', '--eval', script], {
+    cwd: appDirectory,
+    env: scrubbedProbeEnvironment(),
+  })
+}
+
+const runCliSmoke = async (
+  nodeExecutable: string,
+  cliEntry: string,
+  appDirectory: string,
+): Promise<void> => {
+  await execFileAsync(nodeExecutable, [cliEntry, 'web', '--help'], {
+    cwd: appDirectory,
+    env: scrubbedProbeEnvironment(),
+  })
+}
+
 const main = async (): Promise<void> => {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const pnpmEntry = process.env.npm_execpath
@@ -473,6 +489,8 @@ const main = async (): Promise<void> => {
   await executeDesktopStage(plan, {
     run: runCommand,
     readNodeVersion,
+    loadNativeDependencies,
+    runCliSmoke,
   })
   console.log(`desktop stage: ${plan.stageDirectory}`)
 }

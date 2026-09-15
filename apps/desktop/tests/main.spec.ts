@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  createDesktopSidecarOptions,
   createLaunchToken,
   resolveDesktopSidecarPaths,
   startDesktop,
@@ -192,6 +193,20 @@ const flushPromises = async (): Promise<void> => {
 }
 
 describe('desktop sidecar paths', () => {
+  it('isolates the Host under the Electron user-data directory', () => {
+    expect(createDesktopSidecarOptions({
+      isPackaged: true,
+      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
+      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+      platform: 'darwin',
+      userDataPath: '/Users/test/Library/Application Support/DeepSeek Harness',
+    })).toMatchObject({
+      sidecar: {
+        harnessHome: '/Users/test/Library/Application Support/DeepSeek Harness/dsh',
+      },
+    })
+  })
+
   it('resolves packaged runtimes only from the Electron resources directory', () => {
     expect(resolveDesktopSidecarPaths({
       isPackaged: true,
@@ -200,20 +215,37 @@ describe('desktop sidecar paths', () => {
       platform: 'darwin',
     })).toEqual({
       nodeExecutable: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/node/bin/node',
-      cliEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/lib/bin.js',
+      cliEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
     })
   })
 
-  it('resolves development runtimes from apps/desktop/.stage', () => {
+  it('resolves development runtimes from the atomically published stage version', () => {
     expect(resolveDesktopSidecarPaths({
       isPackaged: false,
       resourcesPath: '/electron/resources',
       appPath: '/checkout/apps/desktop',
       platform: process.platform,
+      readStageVersion: (path) => {
+        expect(path).toBe('/checkout/apps/desktop/.stage/current')
+        return 'fixture\n'
+      },
     })).toEqual({
-      nodeExecutable: join('/checkout/apps/desktop/.stage/node/bin', process.platform === 'win32' ? 'node.exe' : 'node'),
-      cliEntry: '/checkout/apps/desktop/.stage/app/lib/bin.js',
+      nodeExecutable: join(
+        '/checkout/apps/desktop/.stage/versions/fixture/node/bin',
+        process.platform === 'win32' ? 'node.exe' : 'node',
+      ),
+      cliEntry: '/checkout/apps/desktop/.stage/versions/fixture/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
     })
+  })
+
+  it('rejects a development stage pointer that is not one version name', () => {
+    expect(() => resolveDesktopSidecarPaths({
+      isPackaged: false,
+      resourcesPath: '/electron/resources',
+      appPath: '/checkout/apps/desktop',
+      platform: 'darwin',
+      readStageVersion: () => '../outside\n',
+    })).toThrow('desktop stage pointer is invalid')
   })
 
   it('uses one explicit stage-root override for either launch mode', () => {
@@ -225,7 +257,7 @@ describe('desktop sidecar paths', () => {
       stageRootOverride: '/custom/sidecar',
     })).toEqual({
       nodeExecutable: '/custom/sidecar/node/bin/node.exe',
-      cliEntry: '/custom/sidecar/app/lib/bin.js',
+      cliEntry: '/custom/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
     })
   })
 })

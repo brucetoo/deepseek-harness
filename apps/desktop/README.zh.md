@@ -1,0 +1,36 @@
+# 桌面应用
+
+[English](README.md) | 中文
+
+`@deepseek-ai/dsh-desktop` 把既有 React 应用与自包含的纯 Node Host 打包为 Electron 应用。Electron 持有窗口、Host sidecar、本地鉴权和应用关闭流程；产品行为仍由既有 Host 与客户端插件实现。
+
+> **注意：** 桌面应用目前是预览功能。打包流程现阶段只生成未签名的 macOS arm64 开发产物。
+
+## 命令
+
+- `pnpm run desktop:dev` 重新构建并校验 sidecar 暂存目录，然后从 checkout 启动 Electron。
+- `pnpm run desktop:stage` 在 `apps/desktop/.stage/versions/` 下发布经过校验的不可变 sidecar 版本，并更新原子指针 `apps/desktop/.stage/current`。
+- `pnpm run desktop:package:mac` 暂存运行时，并在 `apps/desktop/dist/` 下写入应用 bundle 与 ZIP 压缩包。
+
+暂存目录和打包产物均为被忽略的构建输出。
+
+## 运行时
+
+Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` 上启动暂存的 `dsh web` 入口。每次启动都会创建一个 256 位 bearer token。Host 要求每个 HTTP 请求和 WebSocket upgrade 都携带该 token，Electron session 则只为精确的应用 origin 注入它。
+
+`BrowserWindow` 禁用 Node 集成，启用上下文隔离与 Chromium 沙箱，不暴露 preload bridge，拒绝子窗口，并阻止离开应用 origin 的导航。明确的外部 HTTP 与 HTTPS 链接通过操作系统打开。
+
+应用只允许一个实例。第二次启动会聚焦现有窗口。关闭最后一个窗口后，Electron 会先执行有界的 sidecar 关闭流程，再退出。桌面数据使用 Electron `userData` 目录下的 `dsh/` 子目录，不读取用户 CLI 的 `$DSH_HOME`。
+
+## 暂存与打包
+
+[`apps/desktop-runtime`](../desktop-runtime/package.json) 是显式的 pnpm 部署根目录，列出 Web 组合需要的全部运行时依赖与对等依赖（peer dependency）。暂存流程会构建仓库，创建将 workspace 包注入为文件的生产部署，复制当前 Node 可执行文件，并校验必要资源、生成的 Remote 模块、原生模块导入、Node 版本、可执行权限、符号链接包含关系，以及不依赖 checkout 的 CLI 冒烟测试。
+
+每个暂存版本记录源码 commit、锁文件 SHA-256 摘要、Node 版本、平台与架构。打包只接受原子指针选中的、经过校验的 macOS arm64 暂存版本，把它放在 ASAR 外的 `Resources/sidecar`，并使用固定版本的本地 Electron 发行包。
+
+## 限制
+
+- 其他进程占用固定端口 `37615` 时，应用会明确报错并停止。
+- macOS 产物未签名，也未经过 notarization（公证）。
+- Windows 打包、签名、更新、托盘行为以及最后一个窗口关闭后的后台执行尚未实现。
+- 桌面载体使用已鉴权的 loopback HTTP 与 WebSocket 通信，不提供 TLS，也不使用 Electron IPC 传输。

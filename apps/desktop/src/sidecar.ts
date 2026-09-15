@@ -137,6 +137,8 @@ export interface SidecarSupervisorOptions {
   readonly nodeExecutable: string
   /** Absolute path to the staged dsh CLI entry. */
   readonly cliEntry: string
+  /** Desktop-owned Harness home, isolated from the user's CLI installation. */
+  readonly harnessHome: string
   /** Optional working directory for the staged process. */
   readonly cwd?: string
   /** Environment source filtered through the platform allowlist. */
@@ -282,6 +284,7 @@ export class SidecarSupervisor {
       env: launchEnvironment(
         this.#dependencies.platform,
         this.#options.inheritedEnvironment ?? process.env,
+        this.#options.harnessHome,
         this.#token,
       ),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -484,6 +487,7 @@ export class SidecarSupervisor {
 function launchEnvironment(
   platform: NodeJS.Platform,
   inherited: NodeJS.ProcessEnv,
+  harnessHome: string,
   token: string,
 ): NodeJS.ProcessEnv {
   const keys = platform === 'win32' ? WINDOWS_ENVIRONMENT_KEYS : POSIX_ENVIRONMENT_KEYS
@@ -492,6 +496,7 @@ function launchEnvironment(
     const value = inherited[key]
     if (value !== undefined) environment[key] = value
   }
+  environment.DSH_HOME = harnessHome
   environment[TOKEN_ENVIRONMENT_NAME] = token
   return environment
 }

@@ -87,6 +87,7 @@ function supervisor(
   return new SidecarSupervisor({
     nodeExecutable: process.execPath,
     cliEntry: fixturePath,
+    harnessHome: '/tmp/dsh-desktop-home',
     inheritedEnvironment: {
       HOME: '/tmp/dsh-desktop-home',
       NODE_OPTIONS: '--must-not-be-inherited',
@@ -136,6 +137,7 @@ describe('desktop sidecar startup', () => {
     ], {
       env: {
         DSH_DESKTOP_TOKEN: 'fragmented',
+        DSH_HOME: '/tmp/dsh-desktop-home',
         HOME: '/tmp/dsh-desktop-home',
         PATH: process.env.PATH,
       },

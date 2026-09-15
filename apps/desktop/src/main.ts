@@ -1,6 +1,7 @@
 /** Hardened Electron main-process entrypoint and testable lifecycle coordinator. */
 
 import { randomBytes as nodeRandomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron'
 import {
@@ -347,6 +348,13 @@ export interface DesktopSidecarPathOptions {
   readonly appPath: string
   readonly platform: NodeJS.Platform
   readonly stageRootOverride?: string | undefined
+  readonly readStageVersion?: ((path: string) => string) | undefined
+}
+
+/** Electron paths required to build the default desktop sidecar configuration. */
+export interface DesktopSidecarOptionsInput extends DesktopSidecarPathOptions {
+  /** Electron application-data directory reserved for this desktop application. */
+  readonly userDataPath: string
 }
 
 /**
@@ -360,7 +368,7 @@ export const resolveDesktopSidecarPaths = (
   const stageRoot = options.stageRootOverride === undefined
     ? options.isPackaged
       ? resolve(options.resourcesPath, 'sidecar')
-      : resolve(options.appPath, '.stage')
+      : resolveDevelopmentStageRoot(options)
     : resolve(options.stageRootOverride)
   return {
     nodeExecutable: resolve(
@@ -368,9 +376,42 @@ export const resolveDesktopSidecarPaths = (
       'node/bin',
       options.platform === 'win32' ? 'node.exe' : 'node',
     ),
-    cliEntry: resolve(stageRoot, 'app/lib/bin.js'),
+    cliEntry: resolve(stageRoot, 'app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
   }
 }
+
+const resolveDevelopmentStageRoot = (
+  options: DesktopSidecarPathOptions,
+): string => {
+  const stageDirectory = resolve(options.appPath, '.stage')
+  const readStageVersion = options.readStageVersion
+    ?? ((path: string): string => readFileSync(path, 'utf8'))
+  const versionName = readStageVersion(resolve(stageDirectory, 'current')).trim()
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(versionName)) {
+    throw new Error('desktop stage pointer is invalid')
+  }
+  return resolve(stageDirectory, 'versions', versionName)
+}
+
+/**
+ * Build the fixed lifecycle policy and isolated data root for the desktop Host.
+ * @param input - Electron runtime, application, and user-data paths.
+ * @returns Sidecar options consumed by the Electron runtime.
+ */
+export const createDesktopSidecarOptions = (
+  input: DesktopSidecarOptionsInput,
+): ElectronRuntimeOptions => ({
+  sidecar: {
+    ...resolveDesktopSidecarPaths(input),
+    harnessHome: resolve(input.userDataPath, 'dsh'),
+    startupTimeoutMs: 10_000,
+    readinessConfirmationMs: 100,
+    stderrTailBytes: 8_192,
+    shutdownGraceMs: 2_000,
+    terminationGraceMs: 2_000,
+    killGraceMs: 1_000,
+  },
+})
 
 const adaptWindow = (window: ElectronBrowserWindow): DesktopWindow => ({
   webContents: {
@@ -477,26 +518,15 @@ export const createElectronRuntime = (
 
 const defaultSidecarOptions = (
   electron: ElectronModule,
-): ElectronRuntimeOptions => {
-  const sidecarPaths = resolveDesktopSidecarPaths({
+): ElectronRuntimeOptions =>
+  createDesktopSidecarOptions({
     isPackaged: electron.app.isPackaged,
     resourcesPath: process.resourcesPath,
     appPath: electron.app.getAppPath(),
+    userDataPath: electron.app.getPath('userData'),
     platform: process.platform,
     stageRootOverride: process.env.DSH_DESKTOP_SIDECAR_ROOT,
   })
-  return {
-    sidecar: {
-      ...sidecarPaths,
-      startupTimeoutMs: 10_000,
-      readinessConfirmationMs: 100,
-      stderrTailBytes: 8_192,
-      shutdownGraceMs: 2_000,
-      terminationGraceMs: 2_000,
-      killGraceMs: 1_000,
-    },
-  }
-}
 
 if (Object.hasOwn(process.versions, 'electron')) {
   void import('electron').then(electron =>
