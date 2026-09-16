@@ -1,0 +1,76 @@
+name: Windows desktop proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Commit SHA to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      DSH_COVERAGE_MAX_WORKERS: '6'
+      DSH_COVERAGE_PARTITIONS: '8'
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
+      DSH_GATE_CONCURRENCY: '4'
+      DSH_PUBLINT_CONCURRENCY: '8'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target }}
+          persist-credentials: false
+
+      - name: Record verified commit
+        shell: pwsh
+        run: |
+          $actual = git rev-parse HEAD
+          if ($actual -ne '${{ inputs.target }}') {
+            throw "checked out $actual instead of ${{ inputs.target }}"
+          }
+
+      - name: Enable Developer Mode (symlink support)
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-js
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install (immutable)
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Run complete native Windows gate inventory
+        shell: pwsh
+        run: pnpm run check:ci:windows-complete
+
+      - name: Package Windows desktop application
+        shell: pwsh
+        run: pnpm run desktop:package:win
+
+      - name: Verify installed Windows desktop application
+        shell: pwsh
+        run: ./scripts/verify-desktop-windows.ps1
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64-${{ inputs.target }}
+          path: |
+            apps/desktop/dist/DeepSeek-Harness-*-x64.exe
+            apps/desktop/dist/DeepSeek-Harness-*-x64.zip
+            apps/desktop/dist/SHA256SUMS
+          if-no-files-found: error
