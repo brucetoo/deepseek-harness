@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  createDesktopBuildOptions,
   createDesktopBuildConfiguration,
   resolveDesktopPackageStage,
   resolveDesktopPackageTarget,
@@ -31,6 +32,16 @@ afterEach(() => {
 })
 
 describe('desktop package stage', () => {
+  it('keeps native packaging independent from CI publishing credentials', () => {
+    const configuration = { appId: 'ai.deepseek.harness' }
+
+    expect(createDesktopBuildOptions('/checkout', configuration)).toEqual({
+      projectDir: resolve('/checkout', 'apps/desktop'),
+      config: configuration,
+      publish: 'never',
+    })
+  })
+
   it('selects the atomically published macOS arm64 stage', () => {
     const root = fixtureRoot()
     write(join(root, 'apps/desktop/.stage/current'), 'release-1\n')

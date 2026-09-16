@@ -164,6 +164,21 @@ export const createDesktopBuildConfiguration = (
   }
 }
 
+/**
+ * Create deterministic Electron Builder options without implicit CI publishing.
+ * @param root - Repository root.
+ * @param configuration - Validated native application configuration.
+ * @returns Build options for local artifact production only.
+ */
+export const createDesktopBuildOptions = (
+  root: string,
+  configuration: Configuration,
+) => ({
+  projectDir: resolve(root, 'apps/desktop'),
+  config: configuration,
+  publish: 'never' as const,
+})
+
 const main = async (): Promise<void> => {
   if (process.argv.length !== 3) {
     throw new Error(
@@ -179,10 +194,7 @@ const main = async (): Promise<void> => {
   const stage = resolveDesktopPackageStage(root, target)
   const configuration = createDesktopBuildConfiguration(root, stage, target)
   const { build } = await import('electron-builder')
-  const artifacts = await build({
-    projectDir: resolve(root, 'apps/desktop'),
-    config: configuration,
-  })
+  const artifacts = await build(createDesktopBuildOptions(root, configuration))
   await writeDesktopArtifactChecksums(
     resolve(root, 'apps/desktop/dist'),
     target,
