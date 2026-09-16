@@ -7,14 +7,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   BrowserError,
   parsePublicBrowserUrl,
+  type BrowserElementAction,
 } from '@deepseek-ai/dsh-browser'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import z from '@deepseek-ai/schemastery'
 import {
   formatBrowserObservation,
+  type BrowserToolObservation,
 } from './output.ts'
 import {
   assertOwner,
@@ -54,6 +56,23 @@ export const Config: z<Config> = z.object({
   timeoutMs: z.number().default(30_000),
   maxWaitMs: z.number().default(10_000),
 })
+
+const executePreparedAction = async (
+  ctx: Context,
+  config: ResolvedConfig,
+  exec: ToolRunContext,
+  toolName: string,
+  action: BrowserElementAction,
+): Promise<BrowserToolObservation> => {
+  validateTarget(action.target)
+  const owner = assertOwner(exec.agent)
+  return project(await runPreparedAction(
+    ctx,
+    { agent: owner, callId: exec.callId, signal: exec.signal },
+    toolName,
+    action,
+  ), config)
+}
 
 /**
  * Register the seven browser tools and their public-only operating guidance.
@@ -132,11 +151,10 @@ export function apply(ctx: Context, config: Config): void {
     },
     timeoutMs: resolved.timeoutMs,
     async execute(args, exec) {
-      validateTarget(args)
-      const owner = assertOwner(exec.agent)
-      return project(await runPreparedAction(
+      return executePreparedAction(
         ctx,
-        { agent: owner, callId: exec.callId, signal: exec.signal },
+        resolved,
+        exec,
         'browser_click',
         {
           kind: 'click',
@@ -146,7 +164,7 @@ export function apply(ctx: Context, config: Config): void {
             ...args.index === undefined ? {} : { index: args.index },
           },
         },
-      ), resolved)
+      )
     },
     presentCall: args => ({
       card: 'generic',
@@ -169,11 +187,10 @@ export function apply(ctx: Context, config: Config): void {
     },
     timeoutMs: resolved.timeoutMs,
     async execute(args, exec) {
-      validateTarget(args)
-      const owner = assertOwner(exec.agent)
-      return project(await runPreparedAction(
+      return executePreparedAction(
         ctx,
-        { agent: owner, callId: exec.callId, signal: exec.signal },
+        resolved,
+        exec,
         'browser_fill',
         {
           kind: 'fill',
@@ -184,7 +201,7 @@ export function apply(ctx: Context, config: Config): void {
           },
           value: args.value,
         },
-      ), resolved)
+      )
     },
     presentCall: args => ({
       card: 'generic',
@@ -207,11 +224,10 @@ export function apply(ctx: Context, config: Config): void {
     },
     timeoutMs: resolved.timeoutMs,
     async execute(args, exec) {
-      validateTarget(args)
-      const owner = assertOwner(exec.agent)
-      return project(await runPreparedAction(
+      return executePreparedAction(
         ctx,
-        { agent: owner, callId: exec.callId, signal: exec.signal },
+        resolved,
+        exec,
         'browser_select',
         {
           kind: 'select',
@@ -222,7 +238,7 @@ export function apply(ctx: Context, config: Config): void {
           },
           option: args.option,
         },
-      ), resolved)
+      )
     },
     presentCall: args => ({
       card: 'generic',

@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createDesktopSidecarOptions,
@@ -203,11 +203,11 @@ describe('desktop sidecar paths', () => {
       electronExecutable: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
     })).toMatchObject({
       sidecar: {
-        harnessHome: '/Users/test/Library/Application Support/DeepSeek Harness/dsh',
-        bundledSkillDirectory: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/skills',
-        browserElectronExecutable: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
-        browserApplicationEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
-        browserTempRoot: '/Users/test/Library/Application Support/DeepSeek Harness/browser',
+        harnessHome: resolve('/Users/test/Library/Application Support/DeepSeek Harness/dsh'),
+        bundledSkillDirectory: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/skills'),
+        browserElectronExecutable: resolve('/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'),
+        browserApplicationEntry: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/app.asar'),
+        browserTempRoot: resolve('/Users/test/Library/Application Support/DeepSeek Harness/browser'),
       },
     })
   })
@@ -219,8 +219,8 @@ describe('desktop sidecar paths', () => {
       appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
       platform: 'darwin',
     })).toEqual({
-      nodeExecutable: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/node/bin/node',
-      cliEntry: '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      nodeExecutable: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/node/bin/node'),
+      cliEntry: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
     })
   })
 
@@ -231,7 +231,7 @@ describe('desktop sidecar paths', () => {
       appPath: '/checkout/apps/desktop',
       platform: process.platform,
       readStageVersion: (path) => {
-        expect(path).toBe('/checkout/apps/desktop/.stage/current')
+        expect(path).toBe(resolve('/checkout/apps/desktop/.stage/current'))
         return 'fixture\n'
       },
     })).toEqual({
@@ -261,8 +261,8 @@ describe('desktop sidecar paths', () => {
       platform: 'win32',
       stageRootOverride: '/custom/sidecar',
     })).toEqual({
-      nodeExecutable: '/custom/sidecar/node/bin/node.exe',
-      cliEntry: '/custom/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      nodeExecutable: resolve('/custom/sidecar/node/bin/node.exe'),
+      cliEntry: resolve('/custom/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
     })
   })
 })
