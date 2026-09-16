@@ -115,7 +115,6 @@ export const createDesktopBuildConfiguration = (
     productName: 'DeepSeek Harness',
     asar: true,
     npmRebuild: false,
-    electronDist: resolve(root, 'apps/desktop/node_modules/electron/dist'),
     directories: {
       output: resolve(root, 'apps/desktop/dist'),
     },
