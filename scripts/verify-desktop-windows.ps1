@@ -68,9 +68,12 @@ Assert-DesktopPayload $archiveRoot | Out-Null
 
 $desktop = $null
 try {
-    & $installer[0].FullName /S "/D=$installRoot"
-    if ($LASTEXITCODE -ne 0) {
-        throw "desktop installer exited with code $LASTEXITCODE"
+    $installation = Start-Process -FilePath $installer[0].FullName -ArgumentList @(
+        "/S",
+        "/D=$installRoot"
+    ) -Wait -PassThru
+    if ($installation.ExitCode -ne 0) {
+        throw "desktop installer exited with code $($installation.ExitCode)"
     }
     $installedExecutable = Assert-DesktopPayload $installRoot
 
