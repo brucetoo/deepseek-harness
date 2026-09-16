@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -286,6 +287,79 @@ describe('desktop stage validation', () => {
 })
 
 describe('desktop stage publication', () => {
+  it('retries a transient Windows stage rename without weakening atomic publication', async () => {
+    const parent = fixtureRoot()
+    const stage = join(parent, '.stage')
+    const temporary = join(parent, '.stage.tmp')
+    const version = join(stage, 'versions/new')
+    const current = join(stage, 'current')
+    const delays: number[] = []
+    let renameAttempts = 0
+    write(current, 'old\n')
+    write(join(temporary, 'marker'), 'new')
+
+    await publishDesktopStage(
+      {
+        stageDirectory: stage,
+        temporaryDirectory: temporary,
+        versionDirectory: version,
+        currentFile: current,
+        versionName: 'new',
+      },
+      {
+        platform: 'win32',
+        renameVersion: async (source, destination) => {
+          renameAttempts += 1
+          if (renameAttempts === 1) {
+            throw Object.assign(new Error('temporarily locked'), { code: 'EPERM' })
+          }
+          renameSync(source, destination)
+        },
+        wait: async (delayMs) => {
+          delays.push(delayMs)
+        },
+      },
+    )
+
+    expect(renameAttempts).toBe(2)
+    expect(delays).toEqual([200])
+    expect(readFileSync(join(version, 'marker'), 'utf8')).toBe('new')
+    expect(readFileSync(current, 'utf8')).toBe('new\n')
+  })
+
+  it('stops retrying a locked Windows stage after the bounded budget', async () => {
+    const parent = fixtureRoot()
+    const stage = join(parent, '.stage')
+    const temporary = join(parent, '.stage.tmp')
+    const version = join(stage, 'versions/new')
+    const current = join(stage, 'current')
+    let renameAttempts = 0
+    write(current, 'old\n')
+    write(join(temporary, 'marker'), 'new')
+
+    await expect(publishDesktopStage(
+      {
+        stageDirectory: stage,
+        temporaryDirectory: temporary,
+        versionDirectory: version,
+        currentFile: current,
+        versionName: 'new',
+      },
+      {
+        platform: 'win32',
+        renameVersion: async () => {
+          renameAttempts += 1
+          throw Object.assign(new Error('still locked'), { code: 'EPERM' })
+        },
+        wait: async () => {},
+      },
+    )).rejects.toThrow('still locked')
+
+    expect(renameAttempts).toBe(51)
+    expect(readFileSync(current, 'utf8')).toBe('old\n')
+    expect(existsSync(temporary)).toBe(true)
+  })
+
   it('publishes a version before atomically replacing the current pointer', async () => {
     const parent = fixtureRoot()
     const stage = join(parent, '.stage')

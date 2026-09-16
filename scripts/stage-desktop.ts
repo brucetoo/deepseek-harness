@@ -314,13 +314,48 @@ export interface DesktopStagePublication {
 
 /** Replaceable filesystem operation used to test publication rollback. */
 export interface DesktopStagePublicationDependencies {
+  /** Host platform used to select the Windows rename retry policy. */
+  readonly platform?: NodeJS.Platform
+  /** Atomic directory rename operation. */
+  readonly renameVersion?: (source: string, destination: string) => Promise<void>
+  /** Delay operation between transient Windows rename attempts. */
+  readonly wait?: (delayMs: number) => Promise<void>
   readonly writeCurrent?: (path: string, content: string) => Promise<void>
+}
+
+const WINDOWS_RENAME_RETRIES = 50
+const WINDOWS_RENAME_RETRY_DELAY_MS = 200
+
+const renameStageVersion = async (
+  source: string,
+  destination: string,
+  dependencies: DesktopStagePublicationDependencies,
+): Promise<void> => {
+  const renameVersion = dependencies.renameVersion ?? rename
+  const wait = dependencies.wait
+    ?? (delayMs => new Promise(resolve => setTimeout(resolve, delayMs)))
+  for (let retries = 0; ; retries += 1) {
+    try {
+      await renameVersion(source, destination)
+      return
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? error.code : undefined
+      if (
+        (dependencies.platform ?? process.platform) !== 'win32'
+        || (code !== 'EPERM' && code !== 'EBUSY')
+        || retries >= WINDOWS_RENAME_RETRIES
+      ) {
+        throw error
+      }
+      await wait(WINDOWS_RENAME_RETRY_DELAY_MS)
+    }
+  }
 }
 
 /**
  * Publish an immutable stage version, then atomically select it for new launches.
  * @param paths - Container, candidate, version, and current-pointer paths.
- * @param dependencies - Optional atomic pointer writer.
+ * @param dependencies - Optional filesystem and timing adapters.
  */
 export const publishDesktopStage = async (
   paths: DesktopStagePublication,
@@ -328,7 +363,11 @@ export const publishDesktopStage = async (
 ): Promise<void> => {
   await mkdir(resolve(paths.versionDirectory, '..'), { recursive: true })
   await removeDesktopStagePath(paths.versionDirectory)
-  await rename(paths.temporaryDirectory, paths.versionDirectory)
+  await renameStageVersion(
+    paths.temporaryDirectory,
+    paths.versionDirectory,
+    dependencies,
+  )
   const writeCurrent = dependencies.writeCurrent
     ?? ((path: string, content: string) =>
       writeFileAtomic(path, content, { mode: 0o600 }))
