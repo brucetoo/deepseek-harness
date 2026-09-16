@@ -76,11 +76,22 @@ jobs:
         shell: pwsh
         run: pnpm run desktop:package:win
 
+      - name: Inspect Windows desktop artifacts
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path apps/desktop/dist) {
+            Get-ChildItem apps/desktop/dist -Recurse |
+              Select-Object FullName, Length |
+              Format-Table -AutoSize
+          }
+
       - name: Verify installed Windows desktop application
         shell: pwsh
         run: ./scripts/verify-desktop-windows.ps1
 
       - name: Upload Windows desktop artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64-${{ inputs.target }}
