@@ -116,8 +116,10 @@ try {
         throw "desktop application did not expose the React page before the readiness deadline"
     }
 
-    $targetId = $target.id
-    Invoke-RestMethod "http://127.0.0.1:$debugPort/json/close/$targetId" | Out-Null
+    $desktop.Refresh()
+    if (-not $desktop.CloseMainWindow()) {
+        throw "desktop application did not expose a closable main window"
+    }
     if (-not $desktop.WaitForExit(30000)) {
         throw "desktop application did not exit after its window closed"
     }
@@ -136,9 +138,9 @@ finally {
     }
     $uninstaller = Join-Path $installRoot "Uninstall DeepSeek Harness.exe"
     if (Test-Path $uninstaller -PathType Leaf) {
-        & $uninstaller /S
-        if ($LASTEXITCODE -ne 0) {
-            throw "desktop uninstaller exited with code $LASTEXITCODE"
+        $uninstallation = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru
+        if ($uninstallation.ExitCode -ne 0) {
+            throw "desktop uninstaller exited with code $($uninstallation.ExitCode)"
         }
     }
     Remove-Item $temporaryPaths -Recurse -Force -ErrorAction SilentlyContinue
