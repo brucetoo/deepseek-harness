@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDesktopStagePlan,
@@ -111,7 +111,7 @@ afterEach(() => {
 
 describe('desktop stage planning', () => {
   it('plans shell-free build and filtered production deploy commands', () => {
-    const root = '/checkout'
+    const root = resolve('/checkout')
     const plan = createDesktopStagePlan({
       root,
       sourceNodeExecutable: '/runtime/bin/node',
@@ -122,10 +122,10 @@ describe('desktop stage planning', () => {
 
     expect(plan).toMatchObject({
       root,
-      stageDirectory: '/checkout/apps/desktop/.stage',
-      temporaryDirectory: '/checkout/apps/desktop/.stage.tmp-fixture',
-      versionDirectory: '/checkout/apps/desktop/.stage/versions/fixture',
-      currentFile: '/checkout/apps/desktop/.stage/current',
+      stageDirectory: resolve(root, 'apps/desktop/.stage'),
+      temporaryDirectory: resolve(root, 'apps/desktop/.stage.tmp-fixture'),
+      versionDirectory: resolve(root, 'apps/desktop/.stage/versions/fixture'),
+      currentFile: resolve(root, 'apps/desktop/.stage/current'),
       versionName: 'fixture',
       sourceNodeExecutable: '/runtime/bin/node',
       metadata,
@@ -146,7 +146,7 @@ describe('desktop stage planning', () => {
             '--ignore-scripts',
             '--config.node-linker=hoisted',
             '--config.inject-workspace-packages=true',
-            '/checkout/apps/desktop/.stage.tmp-fixture/app',
+            resolve(root, 'apps/desktop/.stage.tmp-fixture/app'),
           ],
           cwd: root,
         },

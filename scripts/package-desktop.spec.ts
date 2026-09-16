@@ -86,10 +86,10 @@ describe('desktop package stage', () => {
   })
 
   it('creates an unsigned macOS app and ZIP configuration with one sidecar version', () => {
-    const root = '/checkout'
+    const root = resolve('/checkout')
     const stage = {
       versionName: 'release-1',
-      sourceDirectory: '/checkout/apps/desktop/.stage/versions/release-1',
+      sourceDirectory: resolve(root, 'apps/desktop/.stage/versions/release-1'),
     }
 
     expect(createDesktopBuildConfiguration(root, stage, 'darwin-arm64')).toEqual({
@@ -97,9 +97,9 @@ describe('desktop package stage', () => {
       productName: 'DeepSeek Harness',
       asar: true,
       npmRebuild: false,
-      electronDist: '/checkout/apps/desktop/node_modules/electron/dist',
+      electronDist: resolve(root, 'apps/desktop/node_modules/electron/dist'),
       directories: {
-        output: '/checkout/apps/desktop/dist',
+        output: resolve(root, 'apps/desktop/dist'),
       },
       files: [
         'lib/types/src/**/*',
@@ -112,7 +112,7 @@ describe('desktop package stage', () => {
       mac: {
         category: 'public.app-category.developer-tools',
         identity: null,
-        icon: '/checkout/apps/desktop/build/icon.png',
+        icon: resolve(root, 'apps/desktop/build/icon.png'),
         target: [
           { target: 'dir', arch: ['arm64'] },
           { target: 'zip', arch: ['arm64'] },

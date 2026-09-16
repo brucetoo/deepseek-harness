@@ -236,10 +236,12 @@ describe('desktop sidecar paths', () => {
       },
     })).toEqual({
       nodeExecutable: join(
-        '/checkout/apps/desktop/.stage/versions/fixture/node/bin',
+        resolve('/checkout/apps/desktop/.stage/versions/fixture/node/bin'),
         process.platform === 'win32' ? 'node.exe' : 'node',
       ),
-      cliEntry: '/checkout/apps/desktop/.stage/versions/fixture/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      cliEntry: resolve(
+        '/checkout/apps/desktop/.stage/versions/fixture/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      ),
     })
   })
 

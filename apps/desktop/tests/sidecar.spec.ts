@@ -79,6 +79,7 @@ function supervisor(
     readonly stderrTailBytes?: number
     readonly spawn?: SidecarSpawn
     readonly platform?: NodeJS.Platform
+    readonly shutdownGraceMs?: number
     readonly closeStdin?: SidecarDependencies['closeStdin']
     readonly signal?: SidecarDependencies['signal']
     readonly reportError?: SidecarDependencies['reportError']
@@ -101,7 +102,7 @@ function supervisor(
     startupTimeoutMs: options.startupTimeoutMs ?? 500,
     readinessConfirmationMs: options.readinessConfirmationMs ?? 10,
     stderrTailBytes: options.stderrTailBytes ?? 256,
-    shutdownGraceMs: 10,
+    shutdownGraceMs: options.shutdownGraceMs ?? 10,
     terminationGraceMs: 10,
     killGraceMs: 10,
   }, {
@@ -379,7 +380,11 @@ describe('desktop sidecar shutdown', () => {
   it('lets the Host exit within the stdin grace without sending a signal', async () => {
     const closeStdin = vi.fn<SidecarDependencies['closeStdin']>(child => child.stdin.end())
     const signal = vi.fn<SidecarDependencies['signal']>()
-    const sidecar = supervisor('graceful', { closeStdin, signal })
+    const sidecar = supervisor('graceful', {
+      closeStdin,
+      shutdownGraceMs: 500,
+      signal,
+    })
     await sidecar.start()
 
     await expect(sidecar.shutdown()).resolves.toEqual({ forcedTermination: false })
@@ -425,7 +430,11 @@ describe('desktop sidecar shutdown', () => {
   it('coalesces concurrent shutdown calls and remains idempotent', async () => {
     const closeStdin = vi.fn<SidecarDependencies['closeStdin']>(child => child.stdin.end())
     const signal = vi.fn<SidecarDependencies['signal']>()
-    const sidecar = supervisor('graceful', { closeStdin, signal })
+    const sidecar = supervisor('graceful', {
+      closeStdin,
+      shutdownGraceMs: 500,
+      signal,
+    })
     await sidecar.start()
 
     const first = sidecar.shutdown()
