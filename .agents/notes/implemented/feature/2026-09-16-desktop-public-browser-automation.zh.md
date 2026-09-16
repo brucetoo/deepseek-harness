@@ -56,7 +56,7 @@ worker 只允许不含凭据的 HTTP 与 HTTPS 顶层 URL。`browser_open` 允�
 
 无密钥 Electron 兼容性测试会启动实际的 worker 与 Playwright 版本，打开确定性的本地表单，按无障碍目标填写和点击控件，观察结果，验证未经审批的跨源脚本导航会报告 `BROWSER_NAVIGATION_BLOCKED`，随后再次取得快照、关闭浏览器并确认 profile 已删除。原生 Windows 打包仍是 Windows 产物可以声称已验证之前的发布门禁。
 
-本实现通过了 119 项浏览器包测试及逐文件 100% 覆盖率、157 项桌面端、打包与工作区约束定向测试、无密钥 ACP snapshot、真实 Electron 兼容性测试、全部 13 项 hygiene 检查和桌面 stage。macOS 发布演练生成了 `DeepSeek-Harness-0.1.1-rc.2-arm64.zip`，其 SHA-256 为 `e74ac2f2afe0ecdbc25fa2dbef85edb188d252be24178b5799df6e5efac5e7a2`；校验和验证与打包应用 smoke 测试确认了 React 就绪、sidecar 启停、包内许可和身份检查、worker 退出时的终止顺序，以及 sidecar 端口释放。
+本实现通过了 119 项浏览器包测试及逐文件 100% 覆盖率、157 项桌面端、打包与工作区约束定向测试、无密钥 ACP snapshot、真实 Electron 兼容性测试、全部 13 项 hygiene 检查和桌面 stage。`bd5ce394eed3dcc253b32777cb9d12603fc9fdc7` 的 macOS 发布演练生成了 `DeepSeek-Harness-0.1.1-rc.2-arm64.zip`，其 SHA-256 为 `3834ef81e7e436eeb24cb29f27035c9db9b76b9f789106456a024a9d19826952`；校验和验证与打包应用 smoke 测试确认了 React 就绪、sidecar 启停、包内许可和身份检查、worker 退出时的终止顺序，以及 sidecar 端口释放。
 
 ## Alternatives considered
 
