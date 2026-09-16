@@ -63,6 +63,32 @@ function Assert-DesktopPayload {
     return $executable
 }
 
+function Close-DesktopThroughCdp {
+    param([string]$DebuggerUrl)
+
+    $version = Invoke-RestMethod "$DebuggerUrl/json/version"
+    $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+    try {
+        $cancellation = [System.Threading.CancellationToken]::None
+        $socket.ConnectAsync(
+            [System.Uri]$version.webSocketDebuggerUrl,
+            $cancellation
+        ).GetAwaiter().GetResult()
+        $payload = [System.Text.Encoding]::UTF8.GetBytes(
+            '{"id":1,"method":"Browser.close"}'
+        )
+        $socket.SendAsync(
+            [System.ArraySegment[byte]]::new($payload),
+            [System.Net.WebSockets.WebSocketMessageType]::Text,
+            $true,
+            $cancellation
+        ).GetAwaiter().GetResult()
+    }
+    finally {
+        $socket.Dispose()
+    }
+}
+
 Expand-Archive -LiteralPath $archive[0].FullName -DestinationPath $archiveRoot
 Assert-DesktopPayload $archiveRoot | Out-Null
 
@@ -116,10 +142,7 @@ try {
         throw "desktop application did not expose the React page before the readiness deadline"
     }
 
-    $desktop.Refresh()
-    if (-not $desktop.CloseMainWindow()) {
-        throw "desktop application did not expose a closable main window"
-    }
+    Close-DesktopThroughCdp "http://127.0.0.1:$debugPort"
     if (-not $desktop.WaitForExit(30000)) {
         throw "desktop application did not exit after its window closed"
     }
