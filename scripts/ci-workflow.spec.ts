@@ -107,7 +107,7 @@ describe('CI workflow', () => {
     expect(desktopSmokeScript).toContain('ConvertFrom-Json')
     expect(desktopSmokeScript).toContain('Start-Process')
     expect(desktopSmokeScript).toContain('/json/list')
-    expect(desktopSmokeScript).toContain('/json/close/')
+    expect(desktopSmokeScript).toContain('"method":"Browser.close"')
     expect(desktopSmokeScript).toContain('WaitForExit')
     expect(nativeSteps.filter(isRecord).find(
       step => step.uses === 'actions/upload-artifact@v4',

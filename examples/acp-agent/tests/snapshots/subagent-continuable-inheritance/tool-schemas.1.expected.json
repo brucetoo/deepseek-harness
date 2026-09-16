@@ -245,6 +245,22 @@
       }
     },
     {
+      "name": "register_artifact",
+      "description": "Register an existing regular file as a completed user deliverable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Existing file path, resolved relative to the current workspace."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
       "name": "report",
       "description": "Report selected content to the agent that started you. Call this once before you finish, with a self-contained final result, and earlier for progress or findings that change what that agent does next. That agent shares your workspace but does not automatically receive your transcript, tool output, or reasoning, so finishing your work is not itself a result. Reporting does not end your turn or finish your work, and only your direct parent receives it. A failed call may still have arrived, so do not blindly repeat it.",
       "parameters": {

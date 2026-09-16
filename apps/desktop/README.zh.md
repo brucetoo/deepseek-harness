@@ -33,7 +33,7 @@ Electron 主进程使用打包的 Node 可执行文件，在 `127.0.0.1:37615` �
 
 [`apps/desktop-runtime`](../desktop-runtime/package.json) 是显式的 pnpm 部署根目录，列出 Web 组合需要的全部运行时依赖与对等依赖（peer dependency）。暂存流程会构建仓库，创建将 workspace 包注入为文件的生产部署，复制当前 Node 可执行文件，并校验必要资源、生成的 Remote 模块、原生模块导入、Node 版本、可执行权限、符号链接包含关系，以及不依赖 checkout 的 CLI 冒烟测试。
 
-每个暂存版本记录源码 commit、锁文件 SHA-256 摘要、Node 版本、平台与架构。打包只接受与原生 `darwin-arm64` 或 `win32-x64` 目标完全匹配且经过校验的暂存版本，把它放在 ASAR 外的 `Resources/sidecar`，并使用固定版本的本地 Electron 发行包。Windows CI 会验证校验和、展开 ZIP、静默安装 NSIS 软件包、检查内置 sidecar 的目标平台、启动已安装应用直至 React 页面就绪、关闭应用窗口，并确认 sidecar 监听器退出。
+每个暂存版本记录源码 commit、锁文件 SHA-256 摘要、Node 版本、平台与架构。打包只接受与原生 `darwin-arm64` 或 `win32-x64` 目标完全匹配且经过校验的暂存版本，把它放在 ASAR 外的 `Resources/sidecar`，并由 Electron Builder 获取 `apps/desktop/package.json` 固定的 Electron 版本。打包流程显式禁用 CI 产物发布，在计算 `SHA256SUMS` 前先写入本地可分发文件。Windows CI 会验证校验和、展开 ZIP、静默安装 NSIS 软件包、检查内置 sidecar 的目标平台、启动已安装应用直至 React 页面就绪、通过 CDP 关闭应用、要求退出码为零，并确认 sidecar 监听器退出。
 
 ## 限制
 

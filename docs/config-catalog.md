@@ -2760,7 +2760,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/tool-browser/src/index.ts:43`](../packages/browser/tool-browser/src/index.ts)
+Source: [`packages/browser/tool-browser/src/index.ts:45`](../packages/browser/tool-browser/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
