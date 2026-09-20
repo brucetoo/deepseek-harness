@@ -13,7 +13,7 @@ afterEach(async () => {
 })
 
 describe('ui-deliverables node plugin', () => {
-  it('registers final-response file-reference guidance only while mounted', async () => {
+  it('registers file-reference guidance only while mounted', async () => {
     ctx = new Context()
     await ctx.plugin(SystemPrompt, { persona: '' })
     const mounted = ctx.plugin({ apply, inject })
@@ -21,7 +21,7 @@ describe('ui-deliverables node plugin', () => {
 
     const section = (await ctx.systemPrompt.assemble()).sections
       .find(entry => entry.name === 'ui:deliverable-file-references')
-    expect(section?.text).toMatchInlineSnapshot('"When you successfully create or modify files, mention the primary outputs in your final response. To make those and any other changed-file references clickable in Web, format them as Markdown inline code using the exact file-tool path, or a basename when unique among the files changed in that turn."')
+    expect(section?.text).toMatchInlineSnapshot('"When you successfully create or modify files, mention the primary outputs in your final response. To make changed-file references clickable in Web, format them as Markdown inline code using the exact registered or file-tool path, or a basename when unique among the files changed in that turn."')
 
     await mounted.dispose()
     expect((await ctx.systemPrompt.assemble()).sections

@@ -8,6 +8,7 @@
  * IPC bridge. This package never prints: the URL line belongs to the shell.
  */
 
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse, Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -61,6 +62,8 @@ export interface Config {
   host: '127.0.0.1' | '0.0.0.0'
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Environment variable containing the bearer token required by every request. */
+  bearerTokenEnv?: string
 }
 
 /**
@@ -74,6 +77,7 @@ export class WebServer extends Service {
   static Config: z<Config> = z.object({
     host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required(),
     port: z.natural().max(65535).required(),
+    bearerTokenEnv: z.string(),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -84,6 +88,7 @@ export class WebServer extends Service {
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
+  private bearerAuthorization: Buffer | undefined
 
   constructor(ctx: Context, private config: Config) {
     super(ctx, 'webServer')
@@ -161,7 +166,21 @@ export class WebServer extends Service {
 
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
+    const bearerTokenEnv = this.config.bearerTokenEnv
+    if (bearerTokenEnv !== undefined) {
+      const token = process.env[bearerTokenEnv]
+      if (token === undefined || token.length === 0) {
+        throw new Error(`webserver: bearer token environment variable "${bearerTokenEnv}" is missing or empty`)
+      }
+      this.bearerAuthorization = Buffer.from(`Bearer ${token}`)
+    }
+
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      if (!this.isAuthorized(req)) {
+        res.writeHead(401, { 'www-authenticate': 'Bearer' })
+        res.end()
+        return
+      }
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
@@ -194,6 +213,17 @@ export class WebServer extends Service {
       })
     })
     this.server.on('upgrade', (req, socket, head) => {
+      if (!this.isAuthorized(req)) {
+        socket.end([
+          'HTTP/1.1 401 Unauthorized',
+          'WWW-Authenticate: Bearer',
+          'Content-Length: 0',
+          'Connection: close',
+          '',
+          '',
+        ].join('\r\n'))
+        return
+      }
       const onError = (error: Error): void => {
         this.ctx.logger.warn(error)
         socket.destroy()
@@ -251,6 +281,15 @@ export class WebServer extends Service {
       }))
       await Promise.all([serverClosed, ...upgradedClosed])
     }, 'webServer.listen')
+  }
+
+  private isAuthorized(request: IncomingMessage): boolean {
+    const expected = this.bearerAuthorization
+    if (expected === undefined) return true
+    const value = request.headers.authorization
+    if (typeof value !== 'string') return false
+    const actual = Buffer.from(value)
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
   }
 
   /** Longest-prefix-wins over the prefix table after an exact-table miss. */

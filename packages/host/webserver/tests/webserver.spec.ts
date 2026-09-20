@@ -19,16 +19,18 @@ import HttpServer, { renderIndexInjections } from '../src/index.ts'
 
 let root: string | undefined
 let context: Context | undefined
+const AUTH_ENV = 'DSH_WEBSERVER_TEST_TOKEN'
 
 afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
   if (root !== undefined) await rm(root, { recursive: true, force: true })
   root = undefined
+  delete process.env.DSH_WEBSERVER_TEST_TOKEN
 })
 
 /** Write a cordis.yml with one webserver row, then boot it through the real Loader. */
-async function loadComposition(port = 0): Promise<Context> {
+async function loadComposition(port = 0, bearerTokenEnv?: string): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-webserver-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -36,6 +38,7 @@ async function loadComposition(port = 0): Promise<Context> {
     '  config:',
     "    host: '127.0.0.1'",
     `    port: ${String(port)}`,
+    ...(bearerTokenEnv === undefined ? [] : [`    bearerTokenEnv: '${bearerTokenEnv}'`]),
     '',
   ].join('\n'))
 
@@ -62,9 +65,17 @@ async function loadComposition(port = 0): Promise<Context> {
 }
 
 /** GET (by default) one path against the running server; returns status plus a body prefix. */
-async function request(port: number, path: string, init?: RequestInit): Promise<{ status: number; body: string }> {
+async function request(
+  port: number,
+  path: string,
+  init?: RequestInit,
+): Promise<{ status: number; body: string; authenticate: string | null }> {
   const response = await fetch(`http://127.0.0.1:${String(port)}${path}`, init)
-  return { status: response.status, body: (await response.text()).slice(0, 80) }
+  return {
+    status: response.status,
+    body: (await response.text()).slice(0, 80),
+    authenticate: response.headers.get('www-authenticate'),
+  }
 }
 
 /** Open one raw upgrade request and return after the handler writes its response. */
@@ -83,6 +94,25 @@ async function upgrade(port: number, path: string): Promise<ReturnType<typeof co
   const [data] = await response as [Buffer]
   expect(String(data)).toContain('101 Switching Protocols')
   return socket
+}
+
+/** Send one raw upgrade request and return its first response bytes. */
+async function upgradeResponse(port: number, path: string, authorization?: string): Promise<string> {
+  const socket = connect(port, '127.0.0.1')
+  await once(socket, 'connect')
+  const response = once(socket, 'data')
+  socket.write([
+    `GET ${path} HTTP/1.1`,
+    `Host: 127.0.0.1:${String(port)}`,
+    'Connection: Upgrade',
+    'Upgrade: dsh-test',
+    ...(authorization === undefined ? [] : [`Authorization: ${authorization}`]),
+    '',
+    '',
+  ].join('\r\n'))
+  const [data] = await response as [Buffer]
+  socket.destroy()
+  return String(data)
 }
 
 describe('real Loader composition', () => {
@@ -246,6 +276,98 @@ describe('real Loader composition', () => {
       { kind: 'script', placement: 'head', text: 'H' },
       { kind: 'script', placement: 'body', text: 'B' },
     ])).toBe('<script>H</script><main>x</main><script>B</script>')
+  })
+
+  it('authenticates every HTTP and upgrade route before dispatch', { timeout: 60_000 }, async () => {
+    const token = 'fixture-token-that-must-not-be-logged'
+    process.env[AUTH_ENV] = token
+    const loaded = await loadComposition(0, AUTH_ENV)
+    const server = loaded.webServer
+    const port = server.port
+    const calls: string[] = []
+    server.register({
+      kind: 'exact',
+      path: '/exact',
+      handler: (_req, res) => {
+        calls.push('exact')
+        res.writeHead(200)
+        res.end('EXACT')
+      },
+    })
+    server.register({
+      kind: 'prefix',
+      path: '/prefix',
+      handler: (_req, res) => {
+        calls.push('prefix')
+        res.writeHead(200)
+        res.end('PREFIX')
+      },
+    })
+    server.registerFallback((_req, res) => {
+      calls.push('fallback')
+      res.writeHead(200)
+      res.end('FALLBACK')
+    })
+    server.registerUpgrade({
+      path: '/events',
+      handler: (_req, socket) => {
+        calls.push('upgrade')
+        socket.end('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n\r\n')
+      },
+    })
+
+    for (const path of ['/exact', '/prefix/leaf', '/fallback']) {
+      expect(await request(port, path)).toMatchObject({
+        status: 401,
+        authenticate: 'Bearer',
+      })
+      expect(await request(port, path, {
+        headers: { authorization: 'Bearer wrong-token' },
+      })).toMatchObject({ status: 401, authenticate: 'Bearer' })
+      expect(await request(port, path, {
+        headers: { authorization: `Basic ${token}` },
+      })).toMatchObject({ status: 401, authenticate: 'Bearer' })
+    }
+    expect(calls).toEqual([])
+
+    expect(await request(port, '/exact', {
+      headers: { authorization: `Bearer ${token}` },
+    })).toMatchObject({ status: 200, body: 'EXACT' })
+    expect(await request(port, '/prefix/leaf', {
+      headers: { authorization: `Bearer ${token}` },
+    })).toMatchObject({ status: 200, body: 'PREFIX' })
+    expect(await request(port, '/fallback', {
+      headers: { authorization: `Bearer ${token}` },
+    })).toMatchObject({ status: 200, body: 'FALLBACK' })
+
+    expect(await upgradeResponse(port, '/events')).toContain('401 Unauthorized')
+    expect(await upgradeResponse(port, '/events', 'Bearer wrong-token')).toContain('401 Unauthorized')
+    expect(calls).toEqual(['exact', 'prefix', 'fallback'])
+    expect(await upgradeResponse(port, '/events', `Bearer ${token}`)).toContain('101 Switching Protocols')
+    expect(calls).toEqual(['exact', 'prefix', 'fallback', 'upgrade'])
+  })
+
+  it('fails activation when the configured bearer environment variable is absent', { timeout: 60_000 }, async () => {
+    let failure: unknown
+    try {
+      await loadComposition(0, AUTH_ENV)
+    } catch (error) {
+      failure = error
+    }
+    expect(String(failure))
+      .toContain(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
+  })
+
+  it('fails activation when the configured bearer environment variable is empty', { timeout: 60_000 }, async () => {
+    process.env[AUTH_ENV] = ''
+    let failure: unknown
+    try {
+      await loadComposition(0, AUTH_ENV)
+    } catch (error) {
+      failure = error
+    }
+    expect(String(failure))
+      .toContain(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
   })
 
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {

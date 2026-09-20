@@ -79,6 +79,17 @@ export class RepositoryCleaner {
       join(this.root, 'native/landlock-run/tsconfig.tsbuildinfo'),
       canonicalRoot,
     )
+    const desktopDirectory = join(this.root, 'apps/desktop')
+    for (const entry of await childDirectories(desktopDirectory)) {
+      const name = basename(entry)
+      if (
+        name === '.stage'
+        || name.startsWith('.stage.tmp-')
+        || name.startsWith('.stage.backup-')
+      ) {
+        await this.addIfPresent(targets, entry, canonicalRoot)
+      }
+    }
 
     // The root project-reference graph is the source of truth for live build targets.
     // Each emitting project declares lib/types as outDir; its parent lib also owns

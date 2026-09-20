@@ -23,6 +23,9 @@ import {
   fitProducedFiles, ProducedFiles, type ProducedFilesProps,
 } from '../src/client/ProducedFiles.tsx'
 import {
+  collectSessionDeliverables, DeliverablesView, type DeliverablesViewProps,
+} from '../src/client/DeliverablesView.tsx'
+import {
   basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
   type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
@@ -409,6 +412,73 @@ describe('ProducedFiles row', () => {
   })
 })
 
+describe('session deliverables view', () => {
+  it('deduplicates files across turns and orders them by their latest successful mutation', () => {
+    const timeline: ConversationTimelineSnapshot = {
+      turnOrder: [1, 2, 3],
+      turns: new Map([
+        [1, turnLocation(1, produced([3, 'report.docx'], [5, 'data.xlsx']))],
+        [2, turnLocation(2, produced([9, 'notes.md'], [10, 'report.docx']))],
+        [3, turnLocation(3)],
+      ]),
+    }
+
+    expect(collectSessionDeliverables(timeline)).toEqual([
+      { path: 'report.docx', firstTurn: 1, lastTurn: 2, lastSeq: 10 },
+      { path: 'notes.md', firstTurn: 2, lastTurn: 2, lastSeq: 9 },
+      { path: 'data.xlsx', firstTurn: 1, lastTurn: 1, lastSeq: 5 },
+    ])
+  })
+
+  it('renders file actions, an empty state, and the older-history control', () => {
+    const openFile = vi.fn<(path: string) => Promise<void>>(() => Promise.resolve())
+    const loadOlder = vi.fn<() => Promise<void>>(() => Promise.resolve())
+    const timeline: ConversationTimelineSnapshot = {
+      turnOrder: [1],
+      turns: new Map([
+        [1, turnLocation(1, produced([3, 'out/report.docx'], [5, 'out/data.xlsx']))],
+      ]),
+    }
+    const snapshot = {
+      chat: { timeline },
+      hasMore: true,
+      loadingOlder: false,
+    }
+    const useSession: DeliverablesViewProps['useSession'] = selector => selector(snapshot as never)
+    const view = render(
+      <DeliverablesView
+        useSession={useSession}
+        openFile={openFile}
+        loadOlder={loadOlder}
+        t={makeTranslate(zh)}
+      />,
+    )
+
+    expect(view.getByRole('heading', { name: '成果' })).toBeTruthy()
+    expect(view.getByText('2 个文件')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '打开 out/report.docx' }))
+    expect(openFile).toHaveBeenCalledWith('out/report.docx')
+    fireEvent.click(view.getByRole('button', { name: '加载更早成果' }))
+    expect(loadOlder).toHaveBeenCalledTimes(1)
+
+    const emptySnapshot = {
+      chat: { timeline: { turnOrder: [], turns: new Map() } },
+      hasMore: false,
+      loadingOlder: false,
+    }
+    view.rerender(
+      <DeliverablesView
+        useSession={selector => selector(emptySnapshot as never)}
+        openFile={openFile}
+        loadOlder={loadOlder}
+        t={makeTranslate(zh)}
+      />,
+    )
+    expect(view.getByText('此会话尚未生成文件')).toBeTruthy()
+    expect(view.queryByRole('button', { name: '加载更早成果' })).toBeNull()
+  })
+})
+
 describe('producedFileMentions resolver', () => {
   const label = (path: string) => `打开 ${path}`
 
@@ -451,14 +521,17 @@ describe('package shells', () => {
 })
 
 describe('plugin registration', () => {
-  it('registers the tail entry and fiber disposal removes it', async () => {
+  it('registers the tail and session-view entries and fiber disposal removes them', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     await ctx.plugin(ConversationEventRegistry).await()
     // The owning view's child declaration, stood up by a bench root entry.
     ctx.slots.register({
       name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' } },
+      children: {
+        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'conversation.view': { kind: 'list', scope: 'session' },
+      },
     } as never, () => null)
     const hostDescription = { getSnapshot: () => undefined, subscribe: () => () => {} }
     ctx.provide('connection', {
@@ -466,6 +539,16 @@ describe('plugin registration', () => {
       isLoopback: false,
       hostDescription,
     } as never)
+    const openPath = vi.fn<(path: string) => Promise<void>>(() => Promise.resolve())
+    ctx.provide('sessions', {
+      list: { getSnapshot: () => ({ byId: { 'session-1': { cwd: '/workspace' } } }) },
+      binding: () => ({
+        session: {
+          loadOlder: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+        },
+      }),
+    } as never)
+    ctx.provide('workspaces', { openPath } as never)
     // ui-theme's Appearance row binds a durable scope through these two.
     ctx.provide('remote', { $on: () => () => {} } as never)
     ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
@@ -476,6 +559,16 @@ describe('plugin registration', () => {
     const [entry] = ctx.slots.entries('conversation.chat.turnTail')
     expect(entry).toBeDefined()
     expect(entry?.inject?.()).toEqual({ isLoopback: false, hooks: { hostDescription } })
+    const deliverablesView = ctx.slots.entries('conversation.view')
+      .find(candidate => candidate.options.id === 'deliverables')
+    expect(deliverablesView?.options.order).toBe(20)
+    expect(deliverablesView?.options.label).toBeTypeOf('function')
+    const injected = deliverablesView?.inject?.('session-1' as never) as {
+      openFile(path: string): void
+      loadOlder(): Promise<void>
+    }
+    injected.openFile('out/report.docx')
+    expect(openPath).toHaveBeenCalledWith('/workspace/out/report.docx')
 
     // The prose face is live while the plugin is: a produced turn yields a
     // resolver whose matches open through the owner-supplied opener.
@@ -494,6 +587,7 @@ describe('plugin registration', () => {
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
+    expect(ctx.slots.entries('conversation.view')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
     expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
   })

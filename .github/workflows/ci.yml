@@ -454,6 +454,24 @@ jobs:
         shell: pwsh
         run: pnpm run check:ci:windows-complete
 
+      - name: Package Windows desktop application
+        shell: pwsh
+        run: pnpm run desktop:package:win
+
+      - name: Verify installed Windows desktop application
+        shell: pwsh
+        run: ./scripts/verify-desktop-windows.ps1
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64
+          path: |
+            apps/desktop/dist/DeepSeek-Harness-*-x64.exe
+            apps/desktop/dist/DeepSeek-Harness-*-x64.zip
+            apps/desktop/dist/SHA256SUMS
+          if-no-files-found: error
+
   # Single stable required check for branch protection: require "all checks
   # passed" instead of enumerating matrix legs whose names change as lanes and
   # node versions evolve. Every blocking job in THIS workflow must be listed in

@@ -6,6 +6,13 @@ import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import * as yaml from 'js-yaml'
 
 describe('ModelHub bundle', () => {
+  it('imports the pi-ai adapter only through its package entrypoint', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const source = readFileSync(resolve(root, 'src/index.ts'), 'utf8')
+
+    expect(source).not.toContain('@deepseek-ai/dsh-llm-pi-ai/src/')
+  })
+
   it('ships one secret-free provider row through its manifest', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {

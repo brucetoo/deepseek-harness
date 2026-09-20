@@ -11,6 +11,8 @@ Use the write tool to create files or completely replace file contents. Existing
 
 Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.
 
+After another tool or script creates a binary deliverable, call register_artifact with its exact path.
+
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 
 Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.
@@ -290,6 +292,11 @@ interface ToolArgsMap {
     /** Maximum number of lines to return. Defaults to 2000. */
     limit?: number;
   } & Record<string, JsonValue>;
+  /** Register an existing regular file as a completed user deliverable. */
+  register_artifact: {
+    /** Existing file path, resolved relative to the current workspace. */
+    path: string;
+  } & Record<string, JsonValue>;
   /** Send a message to a background subagent by its subagent id, continuing the same conversation. It becomes the subagent's next turn: if it is still working, the message waits until its current turn finishes, so it cannot redirect work already underway. This call returns no answer from the subagent — only confirmation that the message was delivered — so use it to give it more work. A failure means the message was NOT delivered. */
   send_message: {
     /** The subagent id returned when the background subagent was started. */
@@ -532,6 +539,10 @@ interface ToolOutputMap {
       text: string;
     }[];
     totalLines: number;
+  };
+  register_artifact: {
+    path: string;
+    bytes?: number;
   };
   send_message: {
     messageId: string;

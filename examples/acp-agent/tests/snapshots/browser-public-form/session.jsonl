@@ -1,0 +1,74 @@
+{"type":"session","version":0,"id":"00000000-0000-4000-8000-000000000001","createdAt":1,"cwd":"{{cwd}}","delegationDepth":0}
+{"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"inserted":[{"content":[{"type":"text","text":"Open https://example.test/form, fill Query with public value, click Submit, inspect the result once more, close the browser, then reply with exactly BROWSER_DONE."}],"source":{"kind":"user"},"role":"user","id":"eb8dea9d-32e1-45df-a350-5f4b0ff8c7eb"}]}}
+{"type":"turn/start","data":{"turn":1}}
+{"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"removedCount":1,"inserted":[]}}
+{"type":"step/start","data":{"turn":1,"step":1}}
+{"type":"user/message","data":{"content":[{"type":"text","text":"Open https://example.test/form, fill Query with public value, click Submit, inspect the result once more, close the browser, then reply with exactly BROWSER_DONE."}],"source":{"kind":"user"},"role":"user","id":"eb8dea9d-32e1-45df-a350-5f4b0ff8c7eb"},"surfaceOp":"append"}
+{"type":"user/message","data":{"content":[{"type":"text","text":"Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.\n\nApproval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed."}],"source":{"kind":"plugin","plugin":"@deepseek-ai/dsh-system-prompt","form":"snapshot","sections":[{"name":"sandbox:policy","text":"Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations."},{"name":"approval:policy","text":"Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed."}]},"role":"user","id":"0ce06bd7-da89-42fd-aa27-3727f6100725"},"surfaceOp":"append"}
+{"type":"session/title","data":{"title":"Open https://example.test/form, fill Que","messageSeqs":[4],"source":{"kind":"fallback"}}}
+{"type":"request/header","data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-v4-pro"},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}
+{"type":"request/context","data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"tool-call-delta","index":0,"id":"call_browser_open","name":"browser_open","argumentsDelta":"{\"url\":\"https://example.test/form\"}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_browser_open","name":"browser_open","arguments":"{\"url\":\"https://example.test/form\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_browser_open","name":"browser_open","arguments":"{\"url\":\"https://example.test/form\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"da5f2177-dc6b-4e47-b44a-2ffcd7d6f8c6"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[9,10,11,12,13],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":1,"callId":"call_browser_open","name":"browser_open","arguments":"{\"url\":\"https://example.test/form\"}"}}
+{"type":"approval/asked","data":{"id":"beb2024d-6d00-4bef-8065-5dde5d79be5a","toolName":"browser_open","callId":"call_browser_open","reason":"Open public browser at https://example.test/form. Page observations will be stored in Session history."}}
+{"type":"approval/decided","data":{"id":"beb2024d-6d00-4bef-8065-5dde5d79be5a","outcome":"allowed-once"}}
+{"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"call_browser_open"},"content":[{"type":"tool-result","toolCallId":"call_browser_open","content":[{"type":"text","text":"URL: https://example.test/form\nTitle: Public form\nTruncated: no\n\nARIA snapshot:\n- heading \"Public form\"\n- textbox \"Query\": \n- button \"Submit\"\n- status: Waiting"}],"isError":false}],"role":"user","id":"58268092-f756-4b6e-bb05-5e366b1496e0"}},"sourceEventSeqs":[15],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":1}}
+{"type":"step/start","data":{"turn":1,"step":2}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"tool-call-delta","index":0,"id":"call_browser_fill","name":"browser_fill","argumentsDelta":"{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_browser_fill","name":"browser_fill","arguments":"{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_browser_fill","name":"browser_fill","arguments":"{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"060f5b5b-d93b-4604-bebe-1405d1954c52"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[21,22,23,24,25],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":2,"callId":"call_browser_fill","name":"browser_fill","arguments":"{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}"}}
+{"type":"approval/asked","data":{"id":"7287c433-7e35-4cf3-818c-599e50a00cb3","toolName":"browser_fill","callId":"call_browser_fill","reason":"Operate textbox \"Query\" on https://example.test/form. Resolved element: <input> complete fill value=\"public value\" Supplied values and subsequent page observations will be stored in Session history."}}
+{"type":"approval/decided","data":{"id":"7287c433-7e35-4cf3-818c-599e50a00cb3","outcome":"allowed-once"}}
+{"type":"tool/result","data":{"turn":1,"step":2,"message":{"source":{"kind":"tool","callId":"call_browser_fill"},"content":[{"type":"tool-result","toolCallId":"call_browser_fill","content":[{"type":"text","text":"URL: https://example.test/form\nTitle: Public form\nTruncated: no\n\nARIA snapshot:\n- heading \"Public form\"\n- textbox \"Query\": public value\n- button \"Submit\"\n- status: Waiting"}],"isError":false}],"role":"user","id":"e53beffa-06a4-4883-8a16-552303c29c2b"}},"sourceEventSeqs":[27],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":2}}
+{"type":"step/start","data":{"turn":1,"step":3}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"tool-call-delta","index":0,"id":"call_browser_click","name":"browser_click","argumentsDelta":"{\"role\":\"button\",\"name\":\"Submit\"}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_browser_click","name":"browser_click","arguments":"{\"role\":\"button\",\"name\":\"Submit\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":3,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_browser_click","name":"browser_click","arguments":"{\"role\":\"button\",\"name\":\"Submit\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"f69fecb4-7131-447b-beba-1c88f444ac70"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[33,34,35,36,37],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":3,"callId":"call_browser_click","name":"browser_click","arguments":"{\"role\":\"button\",\"name\":\"Submit\"}"}}
+{"type":"approval/asked","data":{"id":"a58b4e3f-ec96-406a-90d4-b48dbef08d91","toolName":"browser_click","callId":"call_browser_click","reason":"Operate button \"Submit\" on https://example.test/form. Resolved element: <button> Supplied values and subsequent page observations will be stored in Session history."}}
+{"type":"approval/decided","data":{"id":"a58b4e3f-ec96-406a-90d4-b48dbef08d91","outcome":"allowed-once"}}
+{"type":"tool/result","data":{"turn":1,"step":3,"message":{"source":{"kind":"tool","callId":"call_browser_click"},"content":[{"type":"tool-result","toolCallId":"call_browser_click","content":[{"type":"text","text":"URL: https://example.test/form\nTitle: Public form\nTruncated: no\n\nARIA snapshot:\n- heading \"Public form\"\n- textbox \"Query\": public value\n- button \"Submit\"\n- status: Submitted: public value"}],"isError":false}],"role":"user","id":"7de14077-beb3-44f7-b16e-6a639f44daee"}},"sourceEventSeqs":[39],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":3}}
+{"type":"step/start","data":{"turn":1,"step":4}}
+{"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"tool-call-delta","index":0,"id":"call_browser_snapshot","name":"browser_snapshot","argumentsDelta":"{}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_browser_snapshot","name":"browser_snapshot","arguments":"{}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":4,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_browser_snapshot","name":"browser_snapshot","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"6ce4ae70-ee71-4073-a293-c1c6cb80bfeb"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[45,46,47,48,49],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":4,"callId":"call_browser_snapshot","name":"browser_snapshot","arguments":"{}"}}
+{"type":"tool/result","data":{"turn":1,"step":4,"message":{"source":{"kind":"tool","callId":"call_browser_snapshot"},"content":[{"type":"tool-result","toolCallId":"call_browser_snapshot","content":[{"type":"text","text":"URL: https://example.test/form\nTitle: Public form\nTruncated: no\n\nARIA snapshot:\n- heading \"Public form\"\n- textbox \"Query\": public value\n- button \"Submit\"\n- status: Submitted: public value"}],"isError":false}],"role":"user","id":"3b25f166-3724-4064-a1d4-124e5fbf58e2"}},"sourceEventSeqs":[51],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":4}}
+{"type":"step/start","data":{"turn":1,"step":5}}
+{"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"tool-call-delta","index":0,"id":"call_browser_close","name":"browser_close","argumentsDelta":"{}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_browser_close","name":"browser_close","arguments":"{}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":5,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_browser_close","name":"browser_close","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"906556a6-9524-4106-8bfa-4484ba0d5c57"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[55,56,57,58,59],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":5,"callId":"call_browser_close","name":"browser_close","arguments":"{}"}}
+{"type":"tool/result","data":{"turn":1,"step":5,"message":{"source":{"kind":"tool","callId":"call_browser_close"},"content":[{"type":"tool-result","toolCallId":"call_browser_close","content":[{"type":"text","text":"Browser closed."}],"isError":false}],"role":"user","id":"99108c68-f3b1-4b0e-b45d-874ec451d674"}},"sourceEventSeqs":[61],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":5}}
+{"type":"step/start","data":{"turn":1,"step":6}}
+{"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"text-delta","index":0,"text":"BROWSER_DONE"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"BROWSER_DONE"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":2}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":6,"message":{"role":"assistant","content":[{"type":"text","text":"BROWSER_DONE"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-pro"},"id":"83a61d4c-9f5e-409a-8eb0-bd70ececfaf6"},"usage":{"inputTokens":10,"outputTokens":2}},"sourceEventSeqs":[65,66,67,68,69],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":6}}
+{"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

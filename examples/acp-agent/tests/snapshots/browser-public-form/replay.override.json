@@ -1,0 +1,62 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_open", "name": "browser_open", "argumentsDelta": "{\"url\":\"https://example.test/form\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_open", "name": "browser_open", "arguments": "{\"url\":\"https://example.test/form\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_fill", "name": "browser_fill", "argumentsDelta": "{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_fill", "name": "browser_fill", "arguments": "{\"role\":\"textbox\",\"name\":\"Query\",\"value\":\"public value\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_click", "name": "browser_click", "argumentsDelta": "{\"role\":\"button\",\"name\":\"Submit\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_click", "name": "browser_click", "arguments": "{\"role\":\"button\",\"name\":\"Submit\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_snapshot", "name": "browser_snapshot", "argumentsDelta": "{}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_snapshot", "name": "browser_snapshot", "arguments": "{}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_close", "name": "browser_close", "argumentsDelta": "{}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_close", "name": "browser_close", "arguments": "{}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "BROWSER_DONE" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "BROWSER_DONE" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 2 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

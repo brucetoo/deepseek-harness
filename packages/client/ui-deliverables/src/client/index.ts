@@ -8,9 +8,16 @@
  * the owning view renders an empty chain and inert prose at zero cost.
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  resolveWorkspacePath,
+  type ClientContext,
+  type ISessions,
+  type IWorkspaces,
+  type SessionId,
+} from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import { DeliverablesView, type DeliverablesViewInjected } from './DeliverablesView.tsx'
 import { ProducedFiles } from './ProducedFiles.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
@@ -24,11 +31,25 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+export {
+  collectSessionDeliverables,
+  DeliverablesView,
+  type DeliverablesViewInjected,
+  type DeliverablesViewProps,
+  type SessionDeliverable,
+} from './DeliverablesView.tsx'
 export { ProducedFiles, type ProducedFilesProps } from './ProducedFiles.tsx'
 export { producedForClosing } from './turn-deliverables.ts'
 
 /** Required services for the tail-slot registration and its dictionaries. */
-export const inject = ['slots', 'locale', 'conversationEvents', 'connection']
+export const inject = [
+  'slots',
+  'locale',
+  'conversationEvents',
+  'connection',
+  'sessions',
+  'workspaces',
+]
 
 /**
  * Client plugin body: register the dictionaries and the turn-tail entry.
@@ -36,8 +57,11 @@ export const inject = ['slots', 'locale', 'conversationEvents', 'connection']
  */
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
+  const sessions = ctx.get('sessions') as unknown as ISessions
+  const workspaces = ctx.get('workspaces') as unknown as IWorkspaces
   ctx.conversationEvents.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
+  const t = ctx.locale.bind(NS)
   ctx.slots.inject(
     'conversation.chat.turnTail',
     () => ctx.slots.register({
@@ -50,9 +74,33 @@ export function apply(ctx: ClientContext): void {
       }),
     }, ProducedFiles),
   )
+  ctx.slots.inject(
+    'conversation.view',
+    () => ctx.slots.register({
+      name: 'conversation.view',
+      id: 'deliverables',
+      order: 20,
+      locale: NS,
+      label: () => t('view.tab'),
+      inject: (sessionId: SessionId): DeliverablesViewInjected => {
+        const session = sessions.binding(sessionId)?.session
+        if (session === undefined) {
+          throw new Error(`ui-deliverables: session "${sessionId}" is unavailable`)
+        }
+        return {
+          openFile: (path) => {
+            const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
+            return workspaces.openPath(resolveWorkspacePath(cwd, path))
+          },
+          loadOlder: async () => {
+            await session.loadOlder()
+          },
+        }
+      },
+    }, DeliverablesView),
+  )
   // The prose side of the same vocabulary: the chat view reaches this face
   // via ctx.get, so its absence — this plugin composed out — is the off state.
-  const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
     forClosing(owner) {
       // Same claim test the turn-tail chain entry runs: no produced files,

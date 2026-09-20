@@ -31,6 +31,15 @@ import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
 import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
+import BrowserRuntime from '@deepseek-ai/dsh-browser'
+import type {
+  BrowserElementAction,
+  BrowserObservation,
+  BrowserOpenRequest,
+  BrowserPreparedAction,
+  BrowserPreparedActionId,
+  BrowserWaitRequest,
+} from '@deepseek-ai/dsh-browser'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider, SubagentReportDelivery } from '@deepseek-ai/dsh-subagent'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
@@ -62,7 +71,9 @@ import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
@@ -89,6 +100,41 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** Non-executing browser seam used only to harvest model-facing schemas. */
+class CatalogBrowserRuntime extends BrowserRuntime {
+  private unavailable(): Error {
+    return new Error('tool-catalog browser execution is unreachable')
+  }
+
+  override open(_owner: Agent, _request: BrowserOpenRequest, _signal?: AbortSignal): Promise<BrowserObservation> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override snapshot(_owner: Agent, _signal?: AbortSignal): Promise<BrowserObservation> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override prepare(_owner: Agent, _action: BrowserElementAction, _signal?: AbortSignal): Promise<BrowserPreparedAction> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override commit(_owner: Agent, _id: BrowserPreparedActionId, _signal?: AbortSignal): Promise<BrowserObservation> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override release(_owner: Agent, _id: BrowserPreparedActionId): Promise<void> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override wait(_owner: Agent, _request: BrowserWaitRequest, _signal?: AbortSignal): Promise<BrowserObservation> {
+    return Promise.reject(this.unavailable())
+  }
+
+  override close(_owner: Agent): Promise<void> {
+    return Promise.reject(this.unavailable())
   }
 }
 
@@ -239,6 +285,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-browser',
+    dir: 'tool-browser',
+    source: 'packages/browser/tool-browser/src/index.ts',
+    requires: ['ctx.tools', 'ctx.browser', 'ctx.approval', 'ctx.systemPrompt', 'a calling Agent'],
+    writes: ['tool/call', 'approval/asked', 'approval/decided', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ApprovalService)
+      await ctx.plugin(CatalogBrowserRuntime)
+      await ctx.plugin(ToolBrowser)
+    },
+    note:
+      'The seven browser tools are desktop-only. Open and element mutations require an exact `allowed-once` approval; snapshots, waits, and close do not.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',

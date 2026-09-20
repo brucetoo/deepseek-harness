@@ -81,4 +81,48 @@ describe('dsh-base bundle', () => {
     // The platform layer folded into these rows: no separate patch file ships.
     expect(existsSync(resolve(root, 'windows.cordis.patch.yml'))).toBe(false)
   })
+
+  it('gates the browser provider and every shipped preset on the same desktop paths', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const repositoryRoot = resolve(root, '../../..')
+    const parseRows = (path: string): Record<string, unknown>[] => {
+      const parsed = yaml.load(readFileSync(path, 'utf8'), { schema: entryListSchema })
+      if (!Array.isArray(parsed)) throw new TypeError(`${path} must parse to an entry list`)
+      return parsed.flatMap((entry): Record<string, unknown>[] => {
+        if (typeof entry !== 'object' || entry === null) return []
+        return 'insert' in entry
+          ? (entry as { insert?: Record<string, unknown>[] }).insert ?? []
+          : [entry as Record<string, unknown>]
+      })
+    }
+    const host = parseRows(resolve(root, 'cordis.patch.yml'))
+      .find(row => row.id === 'browser-playwright-electron')
+    if (host === undefined) throw new Error('base patch must mount browser-playwright-electron')
+    const presetRows = ['standard', 'code', 'cordis'].map((preset) => {
+      const rows = parseRows(resolve(repositoryRoot, 'apps/cli/config/agent-presets', preset, 'agent.cordis.yml'))
+      const row = rows.find(candidate => candidate.id === 'tool-browser')
+      if (row === undefined) throw new Error(`${preset} preset must mount tool-browser`)
+      return row
+    })
+    const rows = [host, ...presetRows]
+    const off = { process: { env: {} } }
+    const on = {
+      process: {
+        env: {
+          DSH_BROWSER_ELECTRON_EXECUTABLE: '/Applications/Electron',
+          DSH_BROWSER_APPLICATION_ENTRY: '/Applications/App/app.asar',
+          DSH_BROWSER_TEMP_ROOT: '/tmp/dsh-browser',
+        },
+      },
+    }
+    for (const row of rows) {
+      const expression = (row.disabled as { __jsExpr?: string } | undefined)?.__jsExpr
+      if (expression === undefined) throw new Error(`${String(row.id)} must gate on a !!js disabled expression`)
+      expect(Boolean(evaluate(off, expression)), `${String(row.id)} without desktop paths`).toBe(true)
+      expect(Boolean(evaluate(on, expression)), `${String(row.id)} with desktop paths`).toBe(false)
+    }
+    expect(new Set(rows.map(row =>
+      (row.disabled as { __jsExpr: string }).__jsExpr,
+    ))).toHaveLength(1)
+  })
 })

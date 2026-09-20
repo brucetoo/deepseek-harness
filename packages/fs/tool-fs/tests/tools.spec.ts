@@ -37,6 +37,7 @@ const testToolSignal = new AbortController().signal
 /** An in-memory fake provider; a test can arm a rejection on any primitive. */
 class FakeFs extends FileSystem {
   files = new Map<string, string>()
+  directories = new Set<string>()
   rejectWith?: FsError
   writeIntents: (FsWriteIntent | undefined)[] = []
   editIntents: ({ version: FsVersion } | undefined)[] = []
@@ -55,6 +56,9 @@ class FakeFs extends FileSystem {
   }
   override async stat(target: FsTarget): Promise<FsInfo | undefined> {
     this.throwIfArmed()
+    if (this.directories.has(target.targetKey)) {
+      return { version: FsVersion('v1'), type: 'directory' }
+    }
     const content = this.files.get(target.targetKey)
     if (content === undefined) return undefined
     return { version: FsVersion('v1'), type: 'file', size: content.length }
@@ -151,9 +155,14 @@ describe('session cwd resolution', () => {
 })
 
 describe('registration', () => {
-  it('registers read, write, and edit', async () => {
+  it('registers read, write, edit, and artifact registration', async () => {
     const { ctx } = await setup()
-    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['edit', 'read', 'write'])
+    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual([
+      'edit',
+      'read',
+      'register_artifact',
+      'write',
+    ])
   })
 
   it('declares read parallel-safe while write/edit remain exclusive', async () => {
@@ -172,6 +181,7 @@ describe('registration', () => {
     expect(prompt).toContain('Use the read tool')
     expect(prompt).toContain('Use the write tool')
     expect(prompt).toContain('Use the edit tool')
+    expect(prompt).toContain('call register_artifact')
   })
 
   it('stays pending until ctx.fs exists (inject)', async () => {
@@ -191,13 +201,48 @@ describe('registration', () => {
     const fiber = await ctx.plugin(ToolFs)
     // Each tool contributes BOTH a schema and a prompt section; disposal must
     // withdraw both, not just the schemas.
-    expect(ctx.tools.schemas()).toHaveLength(3)
+    expect(ctx.tools.schemas()).toHaveLength(4)
     const sectionNames = (a: { sections: { name: string }[] }) => a.sections.map(s => s.name).sort()
-    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:edit', 'tool:read', 'tool:write'])
+    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual([
+      'deployment:persona',
+      'harness:identity',
+      'tool:edit',
+      'tool:read',
+      'tool:register-artifact',
+      'tool:write',
+    ])
     await fiber.dispose()
     expect(ctx.tools.schemas()).toHaveLength(0)
     // Only the system-prompt plugin's own built-in sections remain.
     expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity'])
+  })
+})
+
+describe('register_artifact tool', () => {
+  it('publishes an existing regular file as a replayable edit location', async () => {
+    const { ctx, fs } = await setup()
+    fs.files.set('key:report.docx', 'binary-placeholder')
+
+    expect(ctx.tools.get('register_artifact')?.presentCall?.({ path: 'report.docx' })).toEqual({
+      card: 'generic',
+      title: 'Register report.docx',
+      kind: 'edit',
+      locations: [{ path: 'report.docx' }],
+    })
+    const result = await call(ctx, 'register_artifact', { path: 'report.docx' })
+    expect(result).toMatchObject({
+      isError: false,
+      value: { path: 'report.docx', bytes: 18 },
+    })
+  })
+
+  it('rejects blank, missing, and non-file paths', async () => {
+    const { ctx, fs } = await setup()
+    fs.directories.add('key:folder')
+
+    expect((await call(ctx, 'register_artifact', { path: ' ' })).isError).toBe(true)
+    expect((await call(ctx, 'register_artifact', { path: 'missing.docx' })).isError).toBe(true)
+    expect((await call(ctx, 'register_artifact', { path: 'folder' })).isError).toBe(true)
   })
 })
 

@@ -1,0 +1,61 @@
+# Agent Note: 使用已鉴权本地 Host 的 Electron 桌面应用
+
+Status: implemented
+
+[English](2026-09-15-electron-desktop-application.md) | 中文
+
+## Problem
+
+DeepSeek Harness 需要一个可安装的桌面应用，复用既有 Host 与 React 客户端，且不要求单独安装 Node.js 运行时。应用必须阻止无关本地调用方访问固定的 loopback Host，持有其进程生命周期，把桌面状态与用户的 CLI 安装隔离，并打包 Web 组合选中的完整运行时。
+
+GUI 架构曾为 Electron IPC 载体预留位置，但先实现它会重复建设 HTTP 路由、WebSocket 流、动态插件 bundle、静态资源和下载，桌面应用才能运行既有产品流程。源码启动还可以解析 workspace 链接、生成模块、原生依赖和环境中的可执行文件，而已安装应用不能假定这些条件存在。
+
+## Decision
+
+`apps/desktop` 是一个 Electron 应用，包含一个加固的 `BrowserWindow` 和一个独立的纯 Node Host sidecar。原生打包流程会生成未签名的 macOS arm64 与 Windows x64 开发产物。目标命令会拒绝不同的宿主平台、宿主架构或暂存运行时。
+
+sidecar 使用暂存的 `dsh web` 入口在 `127.0.0.1:37615` 上运行，并禁用浏览器自动打开。每次启动都会创建一个 256 位 bearer token，并通过专用环境变量传入。当可选的 `bearerTokenEnv` 配置存在时，`dsh-host-webserver` 会在路由选择前要求每个 HTTP 请求和 WebSocket upgrade 携带精确的 `Authorization: Bearer <token>`。普通浏览器部署只有在配置该字段时才启用鉴权。
+
+Electron session 只为精确的应用 HTTP 与 WebSocket origin 注入该标头。窗口禁用 Node 集成，启用上下文隔离与 Chromium 沙箱，不暴露通用 preload bridge，拒绝新窗口，并阻止离开本地应用 origin 的导航。明确的外部 HTTP 与 HTTPS 链接通过操作系统打开。
+
+应用在启动 Host 前获取单实例锁。第二次启动会聚焦现有窗口。主进程最多等待 Host 就绪 60 秒，随后以 `SIDECAR_TIMEOUT` 报错。关闭最后一个窗口后，Electron 会先执行有界的 sidecar 关闭流程，再退出。启动与关闭故障使用不含 token 的分类诊断。桌面状态使用 Electron 的 `userData/dsh` 目录，因此打包应用不会加载用户的 CLI profile 或 `$DSH_HOME`。
+
+## Packaged runtime
+
+`apps/desktop-runtime` 是显式的 pnpm 部署根目录，列出 Web 组合需要的全部直接运行时依赖与对等依赖（peer dependency）。`desktop:stage` 构建 Host 包与 Web 资源，创建将 workspace 包注入为文件的生产部署，复制当前 Node 可执行文件，并校验必要文件、Cordis 配置、生成的 Remote 模块、原生模块导入、可执行权限、Node 版本、符号链接包含关系，以及不依赖 checkout 的 CLI 冒烟测试。
+
+`DSH_DESKTOP_LOCAL_PLUGINS` 是一项显式构建输入，其值为由本地 npm 包目录组成的 JSON 数组。每个包必须通过 `dsh.bundle.patch` 声明 profile 组合包。暂存流程把每个目录打成 tarball，在关闭生命周期脚本的情况下安装到应用持有的隔离依赖根目录，并链接封闭桌面运行时中已有的包，使 Cordis 与 Harness 服务保持单一安装身份。暂存版本保留每个 tarball，以及记录其包名、版本、patch 路径、安装根目录和 SHA-256 摘要的 manifest。Electron 启动器只解析该 manifest 内受包含约束的路径，把每个暂存本地包的已安装依赖闭包链接到桌面 profile 模块 fallback，并把每个 patch 传给 `dsh web`；暂存完成后绝不再解析原始本地目录。暂存的 `@anweat/dsh-browser` 包会通过不设置 `DSH_BROWSER_*` 启动变量来替换内置 Electron browser provider，避免重复注册 `browser` service，同时保留用户选择的 provider。
+
+每个候选版本记录源码 commit、锁文件 SHA-256 摘要、Node 版本、平台与架构。经过校验的候选版本会移动到 `.stage/versions/<id>`，随后由原子文件 `.stage/current` 选择供新的开发启动与打包使用的版本。已经运行的实例继续持有自己的不可变版本目录。
+
+打包模式解析 `process.resourcesPath/sidecar`；开发模式解析 `.stage/current` 选中的版本。`DSH_DESKTOP_SIDECAR_ROOT` 是唯一显式路径覆盖。两种模式都不会回退到环境中的 Node 可执行文件或 checkout 入口。Electron Builder 把选中的暂存版本放在 ASAR 外，并获取 `apps/desktop/package.json` 固定的 Electron 版本。打包流程会禁用隐式 CI 发布、写入本地产物，再为可分发文件生成 `SHA256SUMS`。macOS 打包会生成 arm64 应用 bundle 与 ZIP 压缩包；Windows 打包会生成 x64 交互式单用户 NSIS 安装程序与 ZIP 压缩包。
+
+## Verification
+
+聚焦测试覆盖 bearer 鉴权、精确 origin 标头注入、导航策略、单实例行为、启动诊断、关闭升级、不可变暂存版本发布、闭包校验、打包配置和打包路径解析。暂存校验会加载 `node-pty` 与 `koffi`，并在清理后的环境中调用暂存 CLI。
+
+真实打包 macOS 应用的冒烟测试从 `.app` 启动，等待 React 界面就绪，关闭首次运行通知，通过鼠标事件打开 Settings，捕获已渲染窗口，经 Electron 浏览器生命周期退出，校验退出码为零和 sidecar 进程数量，并使用同一桌面数据目录再次启动。原生 Windows CI 会验证可分发文件的校验和与 ZIP 展开结果、静默安装 NSIS 软件包、检查内置暂存版本的元数据、启动已安装的可执行文件直至 Electron CDP 中出现其 React 页面、关闭窗口、要求退出码为零，并拒绝仍有 sidecar 监听器的结果。
+
+[Windows 原生运行 35054280752](https://github.com/brucetoo/deepseek-harness/actions/runs/35054280752)检出了 `04ebede20f281d35e8f15006d701bb0fb6323f5c`，并通过 284 项聚焦测试、仓库构建、打包和安装后应用验证。独立复算的 SHA-256 摘要与 `SHA256SUMS` 一致：NSIS 安装程序为 `3c2f8dd824470f237e6c43b6c4425745258fa3489b6920a6bdf7bda02d32c068`，ZIP 为 `ef59c30a5d4409013f7e3da2096bce2af332193c9f390285c278486b0a4ca806`。ZIP 记录了该确切 commit、用于 `win32-x64` 的 Node `v24.20.0`，并包含四个内置工作流 skill。
+
+## Alternatives considered
+
+**先实现 Electron IPC 载体。** 这会移除 loopback 监听，但必须替换所有既有 Web 传输行为。当已鉴权 loopback 成为安全或部署限制时，IPC 仍可作为加固选项。
+
+**在 Electron 主进程内运行 Harness。** 这会少一个进程，却把 Electron 的 Node ABI、原生模块、故障和关闭顺序与 agent 运行时耦合。sidecar 保留故障隔离和 CLI 的纯 Node 执行模型。
+
+**使用 Tauri 和操作系统 WebView。** 这会增加 Rust 与平台 WebView 差异，而当前包图仍需要兼容 Node 的 Host 进程。
+
+**分别构建原生用户界面。** 原生客户端会重复既有 React 客户端并推迟产品对齐。桌面壳复用该客户端并增加操作系统集成。
+
+**把 loopback 可达性视为鉴权。** 其他本地进程可以直接调用固定端口。Host 与 origin 检查不能鉴别这类调用方，因此桌面部署需要每次启动生成的秘密。
+
+**在运行时加载用户环境中的 CLI 插件。** 这会让已安装应用依赖可变的机器状态，使本地 profile 变化无需重新构建即可改变桌面组合，并在产物移动到其他机器后失效。显式暂存会改为捕获选定的包字节与配置。
+
+## Consequences
+
+桌面应用无需第二套传输实现，即可运行与浏览器应用相同的路由、流、bundle、资源和下载。代价是固定本地端口、应用专用 bearer 层、打包的 Node 运行时，以及明显大于系统 WebView 壳的产物体积。
+
+包含本地 bundle 的构建有意作为机器特定的开发产物。其 tarball 与摘要使选定字节可供检查，但它们不属于仓库 lockfile，后续重新构建时必须再次提供。安装阶段会禁用生命周期脚本，因此本地包必须随包提供已构建的运行时文件；捕获受信任的本地源码目录时，其 pack 生命周期仍可运行。
+
+macOS 产物未签名，也未经过 notarization（公证）；Windows 安装程序与可执行文件同样未签名。打包流程会在校验平台、架构和版本后复制原生构建宿主的 Node 可执行文件。签名分发需要开发产物之外的平台凭据与发布来源证明。更新、托盘行为、最后一个窗口关闭后的后台执行、编辑现有 Office 文档、演示文稿生成和云执行仍是独立产品能力，应通过插件实现，而不是写入 Electron 主进程逻辑。打包后的插件组合已经提供新建 DOCX 与 XLSX、生成带引用的网页调研成果，以及经过审批后操作无需凭据的公共页面。

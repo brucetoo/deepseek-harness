@@ -174,6 +174,35 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     }))
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth)
 
+    const filesTab = page.getByRole('tab', { name: 'Files', exact: true })
+    expect(await filesTab.count()).toBe(1)
+    await filesTab.click()
+    const deliverables = page.locator('section[aria-labelledby="deliverables-title"]')
+    await deliverables.getByRole('heading', { name: 'Deliverables', exact: true }).waitFor()
+    expect(await deliverables.getByText('10 files', { exact: true }).count()).toBe(1)
+    const fileActions = deliverables.getByRole('button', { name: /^Open / })
+    await expect.poll(() => fileActions.count()).toBe(10)
+    expect(await fileActions.first().getAttribute('aria-label')).toBe('Open manifest.yaml')
+
+    const openFile = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
+      .mockImplementation(async (request, _signal) => ({
+        rpcId: request.rpcId,
+        result: { ok: true, value: { opened: true as const } },
+      }))
+    try {
+      const [response] = await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/host.openPath'),
+        deliverables.getByRole('button', { name: 'Open manifest.yaml', exact: true }).click(),
+      ])
+      expect(response.status()).toBe(200)
+      expect(openFile).toHaveBeenCalledTimes(1)
+      expect(openFile.mock.calls[0]![0].payload).toEqual({
+        path: `${scaffold.workspaceCwd}/manifest.yaml`,
+      })
+    } finally {
+      openFile.mockRestore()
+    }
+
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 90_000)

@@ -1,0 +1,25 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "Open https://example.test/form, fill Query with public value, click Submit, inspect the result once more, close the browser, then reply with exactly BROWSER_DONE."
+    }
+  ],
+  "permissionAnswers": [
+    {
+      "kind": "allow_once"
+    },
+    {
+      "kind": "allow_once"
+    },
+    {
+      "kind": "allow_once"
+    }
+  ]
+}

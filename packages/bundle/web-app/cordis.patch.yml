@@ -124,6 +124,7 @@
       config:
         host: !!js ctx.webStartup.host ?? '127.0.0.1'
         port: !!js ctx.webStartup.port ?? 3080
+        bearerTokenEnv: !!js ctx.webStartup.bearerTokenEnv
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
@@ -228,8 +229,8 @@
     - id: ui-workflow-run
       name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
-    # Turn tail: the produced-files row under each closing assistant message.
-    # Remove this entry to turn the surface off; the tail hole renders empty.
+    # Produced-file row, session Results view, and inline file links. The
+    # model-facing artifact tool is composed separately by agent presets.
     - id: ui-deliverables
       name: '@deepseek-ai/dsh-client-ui-deliverables'
 
