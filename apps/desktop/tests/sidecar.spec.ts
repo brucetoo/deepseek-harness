@@ -1,5 +1,8 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +19,18 @@ import {
 
 const fixturePath = fileURLToPath(new URL('./fixtures/sidecar-fixture.mjs', import.meta.url))
 const children = new Set<ChildProcessWithoutNullStreams>()
+const roots: string[] = []
+
+function tmp(): string {
+  const root = mkdtempSync(`${tmpdir()}/dsh-desktop-sidecar-`)
+  roots.push(root)
+  return root
+}
+
+function write(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+}
 
 function asynchronouslyErroredChild(
   error: Error,
@@ -69,6 +84,7 @@ afterEach(async () => {
     })
   })))
   children.clear()
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 function supervisor(
@@ -83,12 +99,17 @@ function supervisor(
     readonly closeStdin?: SidecarDependencies['closeStdin']
     readonly signal?: SidecarDependencies['signal']
     readonly reportError?: SidecarDependencies['reportError']
+    readonly patchFiles?: readonly string[]
+    readonly localPluginPackageRoots?: readonly { readonly packageName: string; readonly packageDirectory: string }[]
+    readonly harnessHome?: string
   } = {},
 ): SidecarSupervisor {
   return new SidecarSupervisor({
     nodeExecutable: process.execPath,
     cliEntry: fixturePath,
-    harnessHome: '/tmp/dsh-desktop-home',
+    patchFiles: options.patchFiles ?? [],
+    localPluginPackageRoots: options.localPluginPackageRoots ?? [],
+    harnessHome: options.harnessHome ?? '/tmp/dsh-desktop-home',
     bundledSkillDirectory: '/opt/dsh-desktop/skills',
     browserElectronExecutable: '/opt/DeepSeek Harness/electron',
     browserApplicationEntry: '/opt/DeepSeek Harness/resources/app.asar',
@@ -156,6 +177,84 @@ describe('desktop sidecar startup', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
+  })
+
+  it('places staged local bundle patches before Web application arguments', async () => {
+    const spawn = vi.fn<SidecarSpawn>(trackedSpawn)
+    const sidecar = supervisor('fragmented', {
+      spawn,
+      patchFiles: ['/opt/dsh-desktop/plugin-a.yml', '/opt/dsh-desktop/plugin-b.yml'],
+    })
+
+    await sidecar.start()
+
+    expect(spawn.mock.calls[0]?.[1]).toEqual([
+      fixturePath,
+      'web',
+      '--patch',
+      '/opt/dsh-desktop/plugin-a.yml',
+      '--patch',
+      '/opt/dsh-desktop/plugin-b.yml',
+      '--port',
+      '37615',
+      '--no-open',
+      '--bearer-token-env',
+      'DSH_DESKTOP_TOKEN',
+    ])
+  })
+
+  it('links staged local plugin package closures into the profile module fallback before launch', async () => {
+    const root = tmp()
+    const harnessHome = `${root}/home`
+    const packageDirectory = `${root}/plugins/example-plugin`
+    const dependencyDirectory = `${packageDirectory}/node_modules/example-plugin-dependency`
+    write(`${packageDirectory}/package.json`, JSON.stringify({
+      name: 'example-plugin',
+      version: '1.0.0',
+      dependencies: { 'example-plugin-dependency': '1.0.0' },
+    }))
+    write(`${dependencyDirectory}/package.json`, JSON.stringify({
+      name: 'example-plugin-dependency',
+      version: '1.0.0',
+    }))
+    const spawn = vi.fn<SidecarSpawn>(trackedSpawn)
+    const sidecar = supervisor('fragmented', {
+      spawn,
+      harnessHome,
+      localPluginPackageRoots: [{ packageName: 'example-plugin', packageDirectory }],
+    })
+
+    await sidecar.start()
+
+    const fallback = `${harnessHome}/profiles/node_modules`
+    expect(lstatSync(`${fallback}/example-plugin`).isSymbolicLink()).toBe(true)
+    expect(lstatSync(`${fallback}/example-plugin-dependency`).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(`${fallback}/example-plugin`)).toBe(packageDirectory)
+    expect(readlinkSync(`${fallback}/example-plugin-dependency`)).toBe(dependencyDirectory)
+    expect(spawn).toHaveBeenCalledOnce()
+  })
+
+  it('lets a staged browser plugin replace the built-in desktop browser provider', async () => {
+    const root = tmp()
+    const harnessHome = `${root}/home`
+    const packageDirectory = `${root}/plugins/browser-plugin`
+    write(`${packageDirectory}/package.json`, JSON.stringify({
+      name: '@anweat/dsh-browser',
+      version: '1.0.0',
+    }))
+    const spawn = vi.fn<SidecarSpawn>(trackedSpawn)
+    const sidecar = supervisor('fragmented', {
+      spawn,
+      harnessHome,
+      localPluginPackageRoots: [{ packageName: '@anweat/dsh-browser', packageDirectory }],
+    })
+
+    await sidecar.start()
+
+    const environment = spawn.mock.calls[0]?.[2].env
+    expect(environment).not.toHaveProperty('DSH_BROWSER_APPLICATION_ENTRY')
+    expect(environment).not.toHaveProperty('DSH_BROWSER_ELECTRON_EXECUTABLE')
+    expect(environment).not.toHaveProperty('DSH_BROWSER_TEMP_ROOT')
   })
 
   it('assembles fragmented stdout and ignores unrelated complete lines', async () => {

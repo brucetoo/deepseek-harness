@@ -24,6 +24,37 @@ import { promisify } from 'node:util'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 const execFileAsync = promisify(execFile)
+const LOCAL_PLUGINS_ENV = 'DSH_DESKTOP_LOCAL_PLUGINS'
+const LOCAL_PLUGINS_MANIFEST = 'local-plugins.json'
+
+interface LocalPluginPackageManifest {
+  readonly name?: unknown
+  readonly version?: unknown
+  readonly dsh?: {
+    readonly bundle?: {
+      readonly patch?: unknown
+    }
+  }
+}
+
+/** Validated local bundle package selected for one desktop stage. */
+export interface DesktopLocalPlugin {
+  readonly sourceDirectory: string
+  readonly packageName: string
+  readonly version: string
+  readonly bundlePatch: string
+  readonly archiveName: string
+}
+
+/** One local bundle captured in a staged runtime. */
+interface StagedLocalPlugin {
+  readonly packageName: string
+  readonly version: string
+  readonly bundlePatch: string
+  readonly packageRoot: string
+  readonly archive: string
+  readonly sha256: string
+}
 
 /** Provenance recorded beside one desktop Host runtime. */
 export interface DesktopStageMetadata {
@@ -78,9 +109,12 @@ export interface DesktopStagePlan {
   readonly versionName: string
   readonly sourceNodeExecutable: string
   readonly metadata: DesktopStageMetadata
+  readonly localPlugins: readonly DesktopLocalPlugin[]
   readonly commands: {
     readonly build: DesktopStageCommand
+    readonly packLocalPlugins: readonly DesktopStageCommand[]
     readonly deploy: DesktopStageCommand
+    readonly installLocalPlugins: readonly DesktopStageCommand[]
   }
 }
 
@@ -94,6 +128,114 @@ export interface DesktopStagePlanOptions {
     readonly command: string
     readonly args: readonly string[]
   }
+  readonly localPlugins?: readonly DesktopLocalPlugin[]
+}
+
+const isPackageName = (value: string): boolean =>
+  /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(value)
+
+const assertContainedPath = (root: string, target: string, label: string): void => {
+  const path = relative(root, target)
+  if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
+    throw new Error(`${label} escapes its allowed directory`)
+  }
+}
+
+const localPluginArchiveName = (packageName: string, version: string): string =>
+  `${packageName.replace(/^@/, '').replace('/', '-')}-${version}.tgz`
+
+const localPluginInstallName = (packageName: string): string =>
+  encodeURIComponent(packageName)
+
+const localPluginRootPackageName = (packageName: string): string =>
+  `dsh-desktop-local-${packageName.replace(/^@/, '').replace('/', '-')}`
+
+const pnpmPath = (from: string, to: string): string =>
+  relative(from, to).split(sep).join('/')
+
+const installedPackageNames = async (nodeModules: string): Promise<string[]> => {
+  const names: string[] = []
+  for (const entry of await readdir(nodeModules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || (!entry.isDirectory() && !entry.isSymbolicLink())) continue
+    if (!entry.name.startsWith('@')) {
+      names.push(entry.name)
+      continue
+    }
+    for (const scoped of await readdir(join(nodeModules, entry.name), { withFileTypes: true })) {
+      if (scoped.isDirectory() || scoped.isSymbolicLink()) {
+        names.push(`${entry.name}/${scoped.name}`)
+      }
+    }
+  }
+  return names.sort()
+}
+
+/**
+ * Parse and validate local desktop bundle directories.
+ * @param raw - JSON array from `DSH_DESKTOP_LOCAL_PLUGINS`.
+ * @param cwd - Base directory for relative entries.
+ * @returns Local packages with validated bundle declarations.
+ */
+export const resolveDesktopLocalPlugins = async (
+  raw: string | undefined,
+  cwd: string,
+): Promise<DesktopLocalPlugin[]> => {
+  if (raw === undefined || raw.trim() === '') return []
+  let entries: unknown
+  try {
+    entries = JSON.parse(raw)
+  } catch {
+    throw new Error(`${LOCAL_PLUGINS_ENV} must be a JSON array of package directories`)
+  }
+  if (!Array.isArray(entries) || entries.some(entry => typeof entry !== 'string' || entry.trim() === '')) {
+    throw new Error(`${LOCAL_PLUGINS_ENV} must be a JSON array of non-empty package directories`)
+  }
+  const plugins: DesktopLocalPlugin[] = []
+  const packageNames = new Set<string>()
+  const archiveNames = new Set<string>()
+  for (const entry of entries) {
+    const sourceDirectory = resolve(cwd, entry as string)
+    let manifest: LocalPluginPackageManifest
+    try {
+      manifest = JSON.parse(await readFile(join(sourceDirectory, 'package.json'), 'utf8')) as LocalPluginPackageManifest
+    } catch (error) {
+      throw new Error(`desktop local plugin ${sourceDirectory} has no valid package.json`, { cause: error })
+    }
+    if (typeof manifest.name !== 'string' || !isPackageName(manifest.name)) {
+      throw new Error(`desktop local plugin ${sourceDirectory} has an invalid package name`)
+    }
+    if (typeof manifest.version !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+_-]*$/.test(manifest.version)) {
+      throw new Error(`desktop local plugin ${manifest.name} has an invalid package version`)
+    }
+    const bundlePatch = manifest.dsh?.bundle?.patch
+    if (typeof bundlePatch !== 'string' || bundlePatch.trim() === '' || isAbsolute(bundlePatch)) {
+      throw new Error(`desktop local plugin ${manifest.name} declares no relative dsh.bundle.patch`)
+    }
+    const patchPath = resolve(sourceDirectory, bundlePatch)
+    assertContainedPath(sourceDirectory, patchPath, `desktop local plugin ${manifest.name} patch`)
+    try {
+      if (!(await stat(patchPath)).isFile()) throw new Error('not a file')
+    } catch (error) {
+      throw new Error(`desktop local plugin ${manifest.name} patch is missing: ${bundlePatch}`, { cause: error })
+    }
+    if (packageNames.has(manifest.name)) {
+      throw new Error(`desktop local plugin package name is duplicated: ${manifest.name}`)
+    }
+    const archiveName = localPluginArchiveName(manifest.name, manifest.version)
+    if (archiveNames.has(archiveName)) {
+      throw new Error(`desktop local plugin archive name is duplicated: ${archiveName}`)
+    }
+    packageNames.add(manifest.name)
+    archiveNames.add(archiveName)
+    plugins.push({
+      sourceDirectory,
+      packageName: manifest.name,
+      version: manifest.version,
+      bundlePatch,
+      archiveName,
+    })
+  }
+  return plugins
 }
 
 /**
@@ -107,6 +249,8 @@ export const createDesktopStagePlan = (
   const root = resolve(options.root)
   const stageDirectory = join(root, 'apps/desktop/.stage')
   const temporaryDirectory = join(root, `apps/desktop/.stage.tmp-${options.temporaryId}`)
+  const localPlugins = options.localPlugins ?? []
+  const localPluginArchiveDirectory = join(temporaryDirectory, 'local-plugin-archives')
   return {
     root,
     stageDirectory,
@@ -116,12 +260,23 @@ export const createDesktopStagePlan = (
     versionName: options.temporaryId,
     sourceNodeExecutable: options.sourceNodeExecutable,
     metadata: options.metadata,
+    localPlugins,
     commands: {
       build: {
         command: options.pnpm.command,
         args: [...options.pnpm.args, 'run', 'build'],
         cwd: root,
       },
+      packLocalPlugins: localPlugins.map(plugin => ({
+        command: options.pnpm.command,
+        args: [
+          ...options.pnpm.args,
+          'pack',
+          '--pack-destination',
+          localPluginArchiveDirectory,
+        ],
+        cwd: plugin.sourceDirectory,
+      })),
       deploy: {
         command: options.pnpm.command,
         args: [
@@ -137,6 +292,22 @@ export const createDesktopStagePlan = (
         ],
         cwd: root,
       },
+      installLocalPlugins: localPlugins.map(plugin => ({
+        command: options.pnpm.command,
+        args: [
+          ...options.pnpm.args,
+          'install',
+          '--prod',
+          '--ignore-scripts',
+          '--config.node-linker=hoisted',
+          '--config.auto-install-peers=false',
+        ],
+        cwd: join(
+          temporaryDirectory,
+          'app/local-plugins',
+          localPluginInstallName(plugin.packageName),
+        ),
+      })),
     },
   }
 }
@@ -162,6 +333,7 @@ const requiredFiles = new Map<string, string>([
   ['app/skills/office-xlsx/scripts/create-workbook.mjs', 'XLSX generator'],
   ['app/skills/browser-research/SKILL.md', 'browser research skill'],
   ['app/skills/browser-task/SKILL.md', 'browser task skill'],
+  [LOCAL_PLUGINS_MANIFEST, 'local plugin manifest'],
 ])
 
 const isMissing = (error: unknown): boolean =>
@@ -219,6 +391,71 @@ const assertContainedSymlinks = async (stage: string): Promise<void> => {
   }
 }
 
+const sha256File = async (path: string): Promise<string> =>
+  createHash('sha256').update(await readFile(path)).digest('hex')
+
+const readStagedLocalPlugins = async (stage: string): Promise<unknown[]> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await readFile(join(stage, LOCAL_PLUGINS_MANIFEST), 'utf8'))
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`${LOCAL_PLUGINS_MANIFEST} is not valid JSON`)
+    throw error
+  }
+  if (!Array.isArray(parsed)) throw new Error(`${LOCAL_PLUGINS_MANIFEST} must contain an array`)
+  return parsed as unknown[]
+}
+
+const validateStagedLocalPlugins = async (stage: string): Promise<void> => {
+  const plugins = await readStagedLocalPlugins(stage)
+  const packageNames = new Set<string>()
+  for (const value of plugins) {
+    if (
+      typeof value !== 'object'
+      || value === null
+    ) {
+      throw new Error(`${LOCAL_PLUGINS_MANIFEST} contains an invalid entry`)
+    }
+    const plugin = value as Partial<StagedLocalPlugin>
+    if (
+      typeof plugin.packageName !== 'string'
+      || !isPackageName(plugin.packageName)
+      || typeof plugin.version !== 'string'
+      || plugin.version === ''
+      || typeof plugin.bundlePatch !== 'string'
+      || plugin.bundlePatch === ''
+      || typeof plugin.packageRoot !== 'string'
+      || plugin.packageRoot === ''
+      || typeof plugin.archive !== 'string'
+      || plugin.archive === ''
+      || typeof plugin.sha256 !== 'string'
+      || !/^[a-f0-9]{64}$/.test(plugin.sha256)
+    ) {
+      throw new Error(`${LOCAL_PLUGINS_MANIFEST} contains an invalid entry`)
+    }
+    if (packageNames.has(plugin.packageName)) {
+      throw new Error(`${LOCAL_PLUGINS_MANIFEST} contains duplicate package ${plugin.packageName}`)
+    }
+    packageNames.add(plugin.packageName)
+    const archivePath = resolve(stage, plugin.archive)
+    const packageDirectory = resolve(stage, plugin.packageRoot)
+    const patchPath = resolve(packageDirectory, plugin.bundlePatch)
+    assertContainedPath(stage, archivePath, `desktop local plugin ${plugin.packageName} archive`)
+    assertContainedPath(stage, packageDirectory, `desktop local plugin ${plugin.packageName} package`)
+    assertContainedPath(packageDirectory, patchPath, `desktop local plugin ${plugin.packageName} patch`)
+    await assertFile(archivePath, `desktop local plugin ${plugin.packageName} archive`)
+    await assertFile(patchPath, `desktop local plugin ${plugin.packageName} patch`)
+    if (await sha256File(archivePath) !== plugin.sha256) {
+      throw new Error(`desktop local plugin ${plugin.packageName} archive digest mismatch`)
+    }
+    const installed = JSON.parse(await readFile(join(packageDirectory, 'package.json'), 'utf8')) as LocalPluginPackageManifest
+    if (installed.name !== plugin.packageName || installed.version !== plugin.version
+      || installed.dsh?.bundle?.patch !== plugin.bundlePatch) {
+      throw new Error(`desktop local plugin ${plugin.packageName} installed manifest mismatch`)
+    }
+  }
+}
+
 /** Replaceable process probe used by stage validation. */
 export interface DesktopStageValidationDependencies {
   readonly readNodeVersion?: (nodeExecutable: string) => Promise<string>
@@ -268,6 +505,7 @@ export const validateDesktopStage = async (
     throw error
   }
   assertMetadata(parsedMetadata, expectedMetadata)
+  await validateStagedLocalPlugins(stage)
   await assertContainedSymlinks(stage)
 
   const readNodeVersion = dependencies.readNodeVersion
@@ -419,7 +657,66 @@ export const executeDesktopStage = async (
   await removeDesktopStagePath(plan.versionDirectory)
   try {
     await dependencies.run(plan.commands.build)
+    await mkdir(join(plan.temporaryDirectory, 'local-plugin-archives'), { recursive: true })
+    for (const command of plan.commands.packLocalPlugins) await dependencies.run(command)
     await dependencies.run(plan.commands.deploy)
+    const deployedDependencies = plan.localPlugins.length === 0
+      ? []
+      : await installedPackageNames(join(plan.temporaryDirectory, 'app/node_modules'))
+    for (const [index, command] of plan.commands.installLocalPlugins.entries()) {
+      const plugin = plan.localPlugins[index]
+      if (plugin === undefined) throw new Error('desktop local plugin install plan is inconsistent')
+      const archive = join(plan.temporaryDirectory, 'local-plugin-archives', plugin.archiveName)
+      await assertFile(archive, `desktop local plugin ${plugin.packageName} archive`)
+      await mkdir(command.cwd, { recursive: true })
+      // Root links satisfy peers; overrides keep ordinary transitive references
+      // on the staged singleton instead of fetching another Harness copy.
+      const deployedLinks: [string, string][] = deployedDependencies
+        .filter(packageName => packageName !== plugin.packageName)
+        .map((packageName): [string, string] => [
+          packageName,
+          `link:${pnpmPath(command.cwd, join(plan.temporaryDirectory, 'app/node_modules', packageName))}`,
+        ])
+      const runtimeDependencies: Record<string, string> = Object.fromEntries([
+        [plugin.packageName, `file:${pnpmPath(command.cwd, archive)}`],
+        ...deployedLinks,
+      ])
+      const runtimeOverrides: Record<string, string> = Object.fromEntries(deployedLinks)
+      await writeFile(join(command.cwd, 'package.json'), `${JSON.stringify({
+        name: localPluginRootPackageName(plugin.packageName),
+        private: true,
+        dependencies: runtimeDependencies,
+      }, null, 2)}\n`)
+      await writeFile(join(command.cwd, 'pnpm-workspace.yaml'), [
+        'packages:',
+        '  - .',
+        '',
+        'nodeLinker: hoisted',
+        'autoInstallPeers: false',
+        `overrides: ${JSON.stringify(runtimeOverrides)}`,
+        '',
+      ].join('\n'))
+      await dependencies.run(command)
+    }
+
+    const stagedLocalPlugins: StagedLocalPlugin[] = []
+    for (const plugin of plan.localPlugins) {
+      const installName = localPluginInstallName(plugin.packageName)
+      const archive = join(plan.temporaryDirectory, 'local-plugin-archives', plugin.archiveName)
+      await assertFile(archive, `desktop local plugin ${plugin.packageName} archive`)
+      stagedLocalPlugins.push({
+        packageName: plugin.packageName,
+        version: plugin.version,
+        bundlePatch: plugin.bundlePatch,
+        packageRoot: `app/local-plugins/${installName}/node_modules/${plugin.packageName}`,
+        archive: `local-plugin-archives/${plugin.archiveName}`,
+        sha256: await sha256File(archive),
+      })
+    }
+    await writeFile(
+      join(plan.temporaryDirectory, LOCAL_PLUGINS_MANIFEST),
+      `${JSON.stringify(stagedLocalPlugins, null, 2)}\n`,
+    )
 
     const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
     const stagedNode = join(plan.temporaryDirectory, 'node/bin', nodeName)
@@ -521,6 +818,10 @@ const main = async (): Promise<void> => {
     platform: process.platform,
     arch: process.arch,
   })
+  const localPlugins = await resolveDesktopLocalPlugins(
+    process.env[LOCAL_PLUGINS_ENV],
+    process.cwd(),
+  )
   const plan = createDesktopStagePlan({
     root,
     sourceNodeExecutable: process.execPath,
@@ -530,6 +831,7 @@ const main = async (): Promise<void> => {
       command: process.execPath,
       args: [pnpmEntry],
     },
+    localPlugins,
   })
   await executeDesktopStage(plan, {
     run: runCommand,

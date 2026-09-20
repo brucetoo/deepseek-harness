@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDesktopStagePlan,
@@ -20,6 +20,7 @@ import {
   executeDesktopStage,
   publishDesktopStage,
   removeDesktopStagePath,
+  resolveDesktopLocalPlugins,
   validateDesktopStage,
   type DesktopStageMetadata,
 } from './stage-desktop.ts'
@@ -92,6 +93,7 @@ const populateValidStage = (stage: string): void => {
   createPackage(stage, 'koffi')
   createPackage(stage, 'docx')
   createPackage(stage, 'exceljs')
+  write(join(stage, 'local-plugins.json'), '[]\n')
   const node = join(stage, 'node/bin', process.platform === 'win32' ? 'node.exe' : 'node')
   write(node)
   if (process.platform !== 'win32') chmodSync(node, 0o755)
@@ -155,6 +157,51 @@ describe('desktop stage planning', () => {
     })
   })
 
+  it('plans local bundle packing and staged installation without changing the deploy root', () => {
+    const root = resolve('/checkout')
+    const plugin = {
+      sourceDirectory: resolve('/plugins/example'),
+      packageName: '@example/desktop-plugin',
+      version: '1.2.3',
+      bundlePatch: 'cordis.patch.yml',
+      archiveName: 'example-desktop-plugin-1.2.3.tgz',
+    }
+    const plan = createDesktopStagePlan({
+      root,
+      sourceNodeExecutable: '/runtime/bin/node',
+      metadata,
+      temporaryId: 'fixture',
+      pnpm: { command: '/runtime/bin/node', args: ['/pnpm.cjs'] },
+      localPlugins: [plugin],
+    })
+
+    expect(plan.commands.packLocalPlugins).toEqual([{
+      command: '/runtime/bin/node',
+      args: [
+        '/pnpm.cjs',
+        'pack',
+        '--pack-destination',
+        resolve(root, 'apps/desktop/.stage.tmp-fixture/local-plugin-archives'),
+      ],
+      cwd: plugin.sourceDirectory,
+    }])
+    expect(plan.commands.installLocalPlugins).toEqual([{
+      command: '/runtime/bin/node',
+      args: [
+        '/pnpm.cjs',
+        'install',
+        '--prod',
+        '--ignore-scripts',
+        '--config.node-linker=hoisted',
+        '--config.auto-install-peers=false',
+      ],
+      cwd: resolve(
+        root,
+        'apps/desktop/.stage.tmp-fixture/app/local-plugins/%40example%2Fdesktop-plugin',
+      ),
+    }])
+  })
+
   it('records the commit, lockfile digest, and target runtime identity', async () => {
     const root = fixtureRoot()
     write(join(root, 'pnpm-lock.yaml'), 'lockfile fixture\n')
@@ -171,6 +218,87 @@ describe('desktop stage planning', () => {
       platform: 'linux',
       arch: 'x64',
     })
+  })
+})
+
+describe('desktop local plugin input', () => {
+  const localPlugin = (
+    root: string,
+    name = '@example/desktop-plugin',
+    version = '1.2.3',
+    patch = 'cordis.patch.yml',
+  ): string => {
+    const directory = join(root, name.replaceAll('/', '-'))
+    write(join(directory, 'package.json'), JSON.stringify({
+      name,
+      version,
+      dsh: { bundle: { patch } },
+    }))
+    write(join(directory, patch), '[]\n')
+    return directory
+  }
+
+  it('resolves relative package directories and bundle declarations', async () => {
+    const root = fixtureRoot()
+    const directory = localPlugin(root)
+
+    await expect(resolveDesktopLocalPlugins(
+      JSON.stringify([relative(root, directory)]),
+      root,
+    )).resolves.toEqual([{
+      sourceDirectory: directory,
+      packageName: '@example/desktop-plugin',
+      version: '1.2.3',
+      bundlePatch: 'cordis.patch.yml',
+      archiveName: 'example-desktop-plugin-1.2.3.tgz',
+    }])
+  })
+
+  it.each([
+    ['not JSON', 'not-json'],
+    ['not an array', JSON.stringify({ plugin: '/tmp/example' })],
+    ['an empty entry', JSON.stringify([''])],
+  ])('rejects %s', async (_label, value) => {
+    await expect(resolveDesktopLocalPlugins(value, fixtureRoot()))
+      .rejects.toThrow('DSH_DESKTOP_LOCAL_PLUGINS must be a JSON array')
+  })
+
+  it('rejects a package without a bundle declaration', async () => {
+    const root = fixtureRoot()
+    const directory = join(root, 'plain')
+    write(join(directory, 'package.json'), JSON.stringify({
+      name: 'plain-plugin',
+      version: '1.0.0',
+    }))
+
+    await expect(resolveDesktopLocalPlugins(JSON.stringify([directory]), root))
+      .rejects.toThrow('plain-plugin declares no relative dsh.bundle.patch')
+  })
+
+  it('rejects a package version that could escape the archive directory', async () => {
+    const root = fixtureRoot()
+    const directory = localPlugin(root, 'unsafe-version', '../../outside')
+
+    await expect(resolveDesktopLocalPlugins(JSON.stringify([directory]), root))
+      .rejects.toThrow('unsafe-version has an invalid package version')
+  })
+
+  it('rejects duplicate package names', async () => {
+    const root = fixtureRoot()
+    const first = localPlugin(join(root, 'first'), 'duplicate-plugin')
+    const second = localPlugin(join(root, 'second'), 'duplicate-plugin')
+
+    await expect(resolveDesktopLocalPlugins(JSON.stringify([first, second]), root))
+      .rejects.toThrow('desktop local plugin package name is duplicated: duplicate-plugin')
+  })
+
+  it('rejects distinct package names that produce the same archive name', async () => {
+    const root = fixtureRoot()
+    const first = localPlugin(join(root, 'first'), '@example/plugin')
+    const second = localPlugin(join(root, 'second'), 'example-plugin')
+
+    await expect(resolveDesktopLocalPlugins(JSON.stringify([first, second]), root))
+      .rejects.toThrow('desktop local plugin archive name is duplicated: example-plugin-1.2.3.tgz')
   })
 })
 
@@ -283,6 +411,30 @@ describe('desktop stage validation', () => {
     symlinkSync('node_modules/@deepseek-ai/dsh/lib/bin.js', join(stage, 'app/cli-link'))
 
     await expect(validate(stage)).resolves.toBeUndefined()
+  })
+
+  it('rejects a local plugin archive whose recorded digest does not match', async () => {
+    const stage = createValidStage()
+    const packageRoot = join(stage, 'app/local-plugins/example-plugin/node_modules/example-plugin')
+    write(join(packageRoot, 'package.json'), JSON.stringify({
+      name: 'example-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: 'cordis.patch.yml' } },
+    }))
+    write(join(packageRoot, 'cordis.patch.yml'), '[]\n')
+    write(join(stage, 'local-plugin-archives/example-plugin-1.0.0.tgz'), 'archive')
+    write(join(stage, 'local-plugins.json'), JSON.stringify([{
+      packageName: 'example-plugin',
+      version: '1.0.0',
+      bundlePatch: 'cordis.patch.yml',
+      packageRoot: 'app/local-plugins/example-plugin/node_modules/example-plugin',
+      archive: 'local-plugin-archives/example-plugin-1.0.0.tgz',
+      sha256: '0'.repeat(64),
+    }]))
+
+    await expect(validate(stage)).rejects.toThrow(
+      'desktop local plugin example-plugin archive digest mismatch',
+    )
   })
 })
 
@@ -464,6 +616,91 @@ describe('desktop stage execution', () => {
     expect(JSON.parse(readFileSync(join(plan.versionDirectory, 'metadata.json'), 'utf8'))).toEqual(metadata)
     expect(existsSync(plan.temporaryDirectory)).toBe(false)
     expect(readFileSync(plan.currentFile, 'utf8')).toBe(`${plan.versionName}\n`)
+  })
+
+  it('packs, installs, records, and validates local bundle packages', async () => {
+    const root = fixtureRoot()
+    const sourceNode = join(root, 'runtime/node')
+    const sourcePlugin = join(root, 'plugins/example')
+    write(sourceNode, 'exact-node-runtime')
+    write(join(sourcePlugin, 'package.json'), JSON.stringify({
+      name: 'example-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: 'cordis.patch.yml' } },
+    }))
+    write(join(sourcePlugin, 'cordis.patch.yml'), '[]\n')
+    if (process.platform !== 'win32') chmodSync(sourceNode, 0o751)
+    const [plugin] = await resolveDesktopLocalPlugins(JSON.stringify([sourcePlugin]), root)
+    if (plugin === undefined) throw new Error('local plugin fixture was not resolved')
+    const plan = createDesktopStagePlan({
+      root,
+      sourceNodeExecutable: sourceNode,
+      metadata,
+      temporaryId: 'local-plugin',
+      pnpm: { command: sourceNode, args: ['/pnpm.cjs'] },
+      localPlugins: [plugin],
+    })
+    const commands: unknown[] = []
+
+    await executeDesktopStage(plan, {
+      run: async (command) => {
+        commands.push(command)
+        if (command === plan.commands.packLocalPlugins[0]) {
+          write(join(plan.temporaryDirectory, 'local-plugin-archives', plugin.archiveName), 'packed-plugin')
+        }
+        if (command === plan.commands.deploy) {
+          populateValidStage(plan.temporaryDirectory)
+          write(join(plan.temporaryDirectory, 'app/package.json'), JSON.stringify({
+            name: '@deepseek-ai/dsh-desktop-runtime',
+            dependencies: { 'shared-runtime': '1.0.0' },
+          }))
+          createPackage(plan.temporaryDirectory, 'shared-runtime')
+        }
+        if (command === plan.commands.installLocalPlugins[0]) {
+          const installManifest = JSON.parse(
+            readFileSync(join(command.cwd, 'package.json'), 'utf8'),
+          ) as {
+            dependencies: Record<string, string>
+          }
+          expect(installManifest.dependencies['example-plugin']).toBe(
+            'file:../../../local-plugin-archives/example-plugin-1.0.0.tgz',
+          )
+          expect(installManifest.dependencies['shared-runtime']).toBe(
+            'link:../../node_modules/shared-runtime',
+          )
+          expect(readFileSync(join(command.cwd, 'pnpm-workspace.yaml'), 'utf8'))
+            .toContain('"shared-runtime":"link:../../node_modules/shared-runtime"')
+          const installed = join(command.cwd, 'node_modules/example-plugin')
+          write(join(installed, 'package.json'), JSON.stringify({
+            name: 'example-plugin',
+            version: '1.0.0',
+            dsh: { bundle: { patch: 'cordis.patch.yml' } },
+          }))
+          write(join(installed, 'cordis.patch.yml'), '[]\n')
+        }
+      },
+      readNodeVersion: async () => metadata.nodeVersion,
+      loadNativeDependencies: async () => {},
+      runCliSmoke: async () => {},
+    })
+
+    expect(commands).toEqual([
+      plan.commands.build,
+      plan.commands.packLocalPlugins[0],
+      plan.commands.deploy,
+      plan.commands.installLocalPlugins[0],
+    ])
+    const recorded = JSON.parse(
+      readFileSync(join(plan.versionDirectory, 'local-plugins.json'), 'utf8'),
+    ) as unknown[]
+    expect(recorded).toEqual([expect.objectContaining({
+      packageName: 'example-plugin',
+      version: '1.0.0',
+      bundlePatch: 'cordis.patch.yml',
+      packageRoot: 'app/local-plugins/example-plugin/node_modules/example-plugin',
+      archive: 'local-plugin-archives/example-plugin-1.0.0.tgz',
+      sha256: createHash('sha256').update('packed-plugin').digest('hex'),
+    })])
   })
 
   it('keeps the previous stage when candidate validation fails', async () => {

@@ -2,13 +2,14 @@
 
 import { randomBytes as nodeRandomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron'
 import {
   SidecarShutdownError,
   SidecarStartupError,
   SidecarSupervisor,
   type SidecarDependencies,
+  type LocalPluginPackageRoot,
   type SidecarShutdownResult,
   type SidecarStartResult,
   type SidecarSupervisorOptions,
@@ -353,6 +354,8 @@ export interface DesktopSidecarPathOptions {
   readonly platform: NodeJS.Platform
   readonly stageRootOverride?: string | undefined
   readonly readStageVersion?: ((path: string) => string) | undefined
+  /** Optional local-plugin manifest reader used by tests and embedded runtimes. */
+  readonly readLocalPluginManifest?: ((path: string) => string | undefined) | undefined
 }
 
 /** Electron paths required to build the default desktop sidecar configuration. */
@@ -366,16 +369,29 @@ export interface DesktopSidecarOptionsInput extends DesktopSidecarPathOptions {
 /**
  * Resolve the bundled or development Host runtime without ambient executables.
  * @param options - Electron installation paths, platform, and optional stage override.
- * @returns Executable and CLI paths within one stage root.
+ * @returns Executable, CLI, and local bundle patch paths within one stage root.
  */
 export const resolveDesktopSidecarPaths = (
   options: DesktopSidecarPathOptions,
-): Pick<SidecarSupervisorOptions, 'nodeExecutable' | 'cliEntry'> => {
+): Pick<SidecarSupervisorOptions, 'nodeExecutable' | 'cliEntry' | 'patchFiles' | 'localPluginPackageRoots'> => {
   const stageRoot = options.stageRootOverride === undefined
     ? options.isPackaged
       ? resolve(options.resourcesPath, 'sidecar')
       : resolveDevelopmentStageRoot(options)
     : resolve(options.stageRootOverride)
+  const readManifest = options.readLocalPluginManifest
+    ?? ((path: string): string | undefined => {
+      try {
+        return readFileSync(path, 'utf8')
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+        throw error
+      }
+    })
+  const localPlugins = resolveLocalPluginManifest(
+    stageRoot,
+    readManifest(resolve(stageRoot, 'local-plugins.json')),
+  )
   return {
     nodeExecutable: resolve(
       stageRoot,
@@ -383,7 +399,73 @@ export const resolveDesktopSidecarPaths = (
       options.platform === 'win32' ? 'node.exe' : 'node',
     ),
     cliEntry: resolve(stageRoot, 'app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+    patchFiles: localPlugins.patchFiles,
+    localPluginPackageRoots: localPlugins.packageRoots,
   }
+}
+
+interface DesktopLocalPluginManifestEntry {
+  readonly packageName?: unknown
+  readonly bundlePatch?: unknown
+  readonly packageRoot?: unknown
+}
+
+const resolveLocalPluginManifest = (
+  stageRoot: string,
+  content: string | undefined,
+): { patchFiles: string[]; packageRoots: LocalPluginPackageRoot[] } => {
+  if (content === undefined) return { patchFiles: [], packageRoots: [] }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    throw new Error('desktop local plugin manifest is not valid JSON')
+  }
+  if (!Array.isArray(parsed)) throw new Error('desktop local plugin manifest must contain an array')
+  const patchFiles: string[] = []
+  const packageRoots: LocalPluginPackageRoot[] = []
+  for (const value of parsed) {
+    if (
+      typeof value !== 'object'
+      || value === null
+    ) {
+      throw new Error('desktop local plugin manifest contains an invalid entry')
+    }
+    const entry = value as DesktopLocalPluginManifestEntry
+    if (
+      typeof entry.packageName !== 'string'
+      || !/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(entry.packageName)
+      || typeof entry.bundlePatch !== 'string'
+      || entry.bundlePatch === ''
+      || isAbsolute(entry.bundlePatch)
+      || typeof entry.packageRoot !== 'string'
+      || entry.packageRoot === ''
+      || isAbsolute(entry.packageRoot)
+    ) {
+      throw new Error('desktop local plugin manifest contains an invalid entry')
+    }
+    const packageDirectory = resolve(stageRoot, entry.packageRoot)
+    const packageRelative = relative(stageRoot, packageDirectory)
+    if (
+      packageRelative === '..'
+      || packageRelative.startsWith(`..${sep}`)
+      || isAbsolute(packageRelative)
+    ) {
+      throw new Error(`desktop local plugin package escapes stage ${entry.packageName}`)
+    }
+    const patchPath = resolve(packageDirectory, entry.bundlePatch)
+    const patchRelative = relative(packageDirectory, patchPath)
+    if (
+      patchRelative === '..'
+      || patchRelative.startsWith(`..${sep}`)
+      || isAbsolute(patchRelative)
+    ) {
+      throw new Error(`desktop local plugin patch escapes package ${entry.packageName}`)
+    }
+    patchFiles.push(patchPath)
+    packageRoots.push({ packageName: entry.packageName, packageDirectory })
+  }
+  return { patchFiles, packageRoots }
 }
 
 const resolveDevelopmentStageRoot = (
@@ -416,7 +498,7 @@ export const createDesktopSidecarOptions = (
       browserElectronExecutable: resolve(input.electronExecutable),
       browserApplicationEntry: resolve(input.appPath),
       browserTempRoot: resolve(input.userDataPath, 'browser'),
-      startupTimeoutMs: 10_000,
+      startupTimeoutMs: 60_000,
       readinessConfirmationMs: 100,
       stderrTailBytes: 8_192,
       shutdownGraceMs: 2_000,

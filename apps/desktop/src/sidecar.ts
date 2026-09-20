@@ -8,6 +8,9 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 /** Fixed loopback origin exposed by the desktop Host. */
@@ -15,6 +18,7 @@ export const SIDECAR_ORIGIN = 'http://127.0.0.1:37615'
 
 const READINESS_LINE = `dsh web: ${SIDECAR_ORIGIN}`
 const TOKEN_ENVIRONMENT_NAME = 'DSH_DESKTOP_TOKEN'
+const LOCAL_BROWSER_PROVIDER_PACKAGES = new Set(['@anweat/dsh-browser'])
 const POSIX_ENVIRONMENT_KEYS = ['HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PATH', 'TMPDIR'] as const
 const WINDOWS_ENVIRONMENT_KEYS = [
   'APPDATA',
@@ -131,12 +135,24 @@ export type SidecarSpawn = (
 /** Signals used by the bounded sidecar shutdown sequence. */
 export type SidecarSignal = 'SIGTERM' | 'SIGKILL'
 
+/** One staged local plugin root exposed through the desktop profile fallback. */
+export interface LocalPluginPackageRoot {
+  /** Package name exposed to profile-level Node resolution. */
+  readonly packageName: string
+  /** Absolute package directory inside the staged desktop runtime. */
+  readonly packageDirectory: string
+}
+
 /** Construction options for one desktop sidecar lifecycle. */
 export interface SidecarSupervisorOptions {
   /** Absolute path to the staged Node executable. */
   readonly nodeExecutable: string
   /** Absolute path to the staged dsh CLI entry. */
   readonly cliEntry: string
+  /** Stage-local bundle patches enabled before Web application arguments. */
+  readonly patchFiles: readonly string[]
+  /** Stage-local packages made resolvable from the desktop profile root. */
+  readonly localPluginPackageRoots: readonly LocalPluginPackageRoot[]
   /** Desktop-owned Harness home, isolated from the user's CLI installation. */
   readonly harnessHome: string
   /** Read-only application skills shipped inside the staged runtime. */
@@ -286,6 +302,15 @@ export class SidecarSupervisor {
     if (this.#token.length === 0) {
       throw this.#failure('SIDECAR_SPAWN_FAILURE')
     }
+    try {
+      healLocalPluginPackageFallbacks(
+        this.#options.harnessHome,
+        this.#options.localPluginPackageRoots,
+      )
+    } catch (error: unknown) {
+      this.#stderr = error instanceof Error ? error.message : String(error)
+      throw this.#failure('SIDECAR_SPAWN_FAILURE')
+    }
 
     const spawnOptions: SidecarSpawnOptions = {
       ...this.#options.cwd === undefined ? {} : { cwd: this.#options.cwd },
@@ -298,6 +323,7 @@ export class SidecarSupervisor {
         this.#options.browserElectronExecutable,
         this.#options.browserApplicationEntry,
         this.#options.browserTempRoot,
+        this.#options.localPluginPackageRoots,
         this.#token,
       ),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -310,6 +336,7 @@ export class SidecarSupervisor {
         [
           this.#options.cliEntry,
           'web',
+          ...this.#options.patchFiles.flatMap(path => ['--patch', path]),
           '--port',
           '37615',
           '--no-open',
@@ -506,6 +533,7 @@ function launchEnvironment(
   browserElectronExecutable: string,
   browserApplicationEntry: string,
   browserTempRoot: string,
+  localPluginPackageRoots: readonly LocalPluginPackageRoot[],
   token: string,
 ): NodeJS.ProcessEnv {
   const keys = platform === 'win32' ? WINDOWS_ENVIRONMENT_KEYS : POSIX_ENVIRONMENT_KEYS
@@ -516,13 +544,109 @@ function launchEnvironment(
   }
   environment.DSH_HOME = harnessHome
   environment.DSH_BUNDLED_SKILL_DIR = bundledSkillDirectory
-  environment.DSH_BROWSER_APPLICATION_ENTRY = browserApplicationEntry
-  environment.DSH_BROWSER_ELECTRON_EXECUTABLE = browserElectronExecutable
-  environment.DSH_BROWSER_TEMP_ROOT = browserTempRoot
+  if (!localPluginPackageRoots.some(root => LOCAL_BROWSER_PROVIDER_PACKAGES.has(root.packageName))) {
+    environment.DSH_BROWSER_APPLICATION_ENTRY = browserApplicationEntry
+    environment.DSH_BROWSER_ELECTRON_EXECUTABLE = browserElectronExecutable
+    environment.DSH_BROWSER_TEMP_ROOT = browserTempRoot
+  }
   environment.DEEPSEEK_HARNESS_DESKTOP_NODE = nodeExecutable
   environment.DEEPSEEK_HARNESS_BUNDLED_SKILL_DIR = bundledSkillDirectory
   environment[TOKEN_ENVIRONMENT_NAME] = token
   return environment
+}
+
+interface NodePackageManifest {
+  readonly name?: unknown
+  readonly dependencies?: Record<string, unknown>
+  readonly peerDependencies?: Record<string, unknown>
+}
+
+const packageNamePattern = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
+
+function assertPackageName(packageName: string): void {
+  if (!packageNamePattern.test(packageName)) {
+    throw new Error(`desktop local plugin package has invalid package name ${JSON.stringify(packageName)}`)
+  }
+}
+
+function readPackageManifest(path: string): NodePackageManifest {
+  return JSON.parse(readFileSync(path, 'utf8')) as NodePackageManifest
+}
+
+function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
+  for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
+    const candidate = join(searchPath, packageName)
+    if (existsSync(join(candidate, 'package.json'))) return candidate
+  }
+  return undefined
+}
+
+function ensureSymlink(link: string, target: string): void {
+  let metadata
+  try {
+    metadata = lstatSync(link)
+  } catch {
+    metadata = undefined
+  }
+  if (metadata !== undefined) {
+    if (!metadata.isSymbolicLink()) {
+      throw new Error(`desktop local plugin fallback ${link} exists and is not a symlink`)
+    }
+    if (readlinkSync(link) === target) return
+    unlinkSync(link)
+  }
+  try {
+    symlinkSync(target, link, 'junction')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
+      || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
+      throw error
+    }
+  }
+}
+
+function healLocalPluginPackageFallbacks(
+  harnessHome: string,
+  roots: readonly LocalPluginPackageRoot[],
+): void {
+  if (roots.length === 0) return
+  const links = new Map<string, string>()
+  const queue: { anchor: string; manifest: NodePackageManifest }[] = []
+  for (const root of roots) {
+    assertPackageName(root.packageName)
+    const manifestPath = join(root.packageDirectory, 'package.json')
+    const manifest = readPackageManifest(manifestPath)
+    if (manifest.name !== root.packageName) {
+      throw new Error(`desktop local plugin ${root.packageName} installed manifest mismatch`)
+    }
+    links.set(root.packageName, root.packageDirectory)
+    queue.push({ anchor: manifestPath, manifest })
+  }
+
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    for (const packageName of [
+      ...Object.keys(next.manifest.dependencies ?? {}),
+      ...Object.keys(next.manifest.peerDependencies ?? {}),
+    ]) {
+      assertPackageName(packageName)
+      if (links.has(packageName)) continue
+      const directory = packageDirFromAnchor(next.anchor, packageName)
+      if (directory === undefined) continue
+      links.set(packageName, directory)
+      queue.push({
+        anchor: join(directory, 'package.json'),
+        manifest: readPackageManifest(join(directory, 'package.json')),
+      })
+    }
+  }
+
+  const modulesDir = join(harnessHome, 'profiles', 'node_modules')
+  mkdirSync(modulesDir, { recursive: true })
+  for (const [packageName, target] of links) {
+    const link = join(modulesDir, packageName)
+    mkdirSync(dirname(link), { recursive: true })
+    ensureSymlink(link, target)
+  }
 }
 
 function utf8Tail(value: string, maxBytes: number): string {

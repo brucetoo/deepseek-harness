@@ -208,6 +208,7 @@ describe('desktop sidecar paths', () => {
         browserElectronExecutable: resolve('/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'),
         browserApplicationEntry: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/app.asar'),
         browserTempRoot: resolve('/Users/test/Library/Application Support/DeepSeek Harness/browser'),
+        startupTimeoutMs: 60_000,
       },
     })
   })
@@ -221,6 +222,8 @@ describe('desktop sidecar paths', () => {
     })).toEqual({
       nodeExecutable: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/node/bin/node'),
       cliEntry: resolve('/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+      patchFiles: [],
+      localPluginPackageRoots: [],
     })
   })
 
@@ -242,7 +245,60 @@ describe('desktop sidecar paths', () => {
       cliEntry: resolve(
         '/checkout/apps/desktop/.stage/versions/fixture/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
       ),
+      patchFiles: [],
+      localPluginPackageRoots: [],
     })
+  })
+
+  it('resolves staged local bundle patches inside their installed packages', () => {
+    expect(resolveDesktopSidecarPaths({
+      isPackaged: true,
+      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
+      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+      platform: 'darwin',
+      readLocalPluginManifest: () => JSON.stringify([{
+        packageName: '@example/desktop-plugin',
+        bundlePatch: 'cordis.patch.yml',
+        packageRoot: 'app/local-plugins/%40example%2Fdesktop-plugin/node_modules/@example/desktop-plugin',
+      }]),
+    }).patchFiles).toEqual([
+      resolve(
+        '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/local-plugins/%40example%2Fdesktop-plugin/node_modules/@example/desktop-plugin/cordis.patch.yml',
+      ),
+    ])
+  })
+
+  it('resolves staged local packages for profile-level module fallback', () => {
+    expect(resolveDesktopSidecarPaths({
+      isPackaged: true,
+      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
+      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+      platform: 'darwin',
+      readLocalPluginManifest: () => JSON.stringify([{
+        packageName: '@example/desktop-plugin',
+        bundlePatch: 'cordis.patch.yml',
+        packageRoot: 'app/local-plugins/%40example%2Fdesktop-plugin/node_modules/@example/desktop-plugin',
+      }]),
+    }).localPluginPackageRoots).toEqual([{
+      packageName: '@example/desktop-plugin',
+      packageDirectory: resolve(
+        '/Applications/DeepSeek Harness.app/Contents/Resources/sidecar/app/local-plugins/%40example%2Fdesktop-plugin/node_modules/@example/desktop-plugin',
+      ),
+    }])
+  })
+
+  it('rejects a staged local bundle patch outside its installed package', () => {
+    expect(() => resolveDesktopSidecarPaths({
+      isPackaged: true,
+      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
+      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+      platform: 'darwin',
+      readLocalPluginManifest: () => JSON.stringify([{
+        packageName: '@example/desktop-plugin',
+        bundlePatch: '../../../outside.yml',
+        packageRoot: 'app/local-plugins/%40example%2Fdesktop-plugin/node_modules/@example/desktop-plugin',
+      }]),
+    })).toThrow('desktop local plugin patch escapes package @example/desktop-plugin')
   })
 
   it('rejects a development stage pointer that is not one version name', () => {
@@ -265,6 +321,8 @@ describe('desktop sidecar paths', () => {
     })).toEqual({
       nodeExecutable: resolve('/custom/sidecar/node/bin/node.exe'),
       cliEntry: resolve('/custom/sidecar/app/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+      patchFiles: [],
+      localPluginPackageRoots: [],
     })
   })
 })
