@@ -1,8 +1,26 @@
+---
+description: "Notify configured Feishu recipients when DSH waits for a user-question answer, with a session return link."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-feishu-hitl-notifier
 
 English | [中文](README.zh.md)
 
+## Summary
+
 This opt-in Host plugin sends one Feishu notification when an agent-owned DSH user question reaches its active answer provider. The card links back to DSH Web. It never answers the question or changes the provider result.
+
+## Table of Contents
+
+- Requirements
+- Add the plugin to a profile
+- Configuration
+- Settings in DSH Web
+- Notification behavior
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Requirements
 
@@ -71,6 +89,10 @@ feishu-cli --config <absolute-path> msg send \
 The card contains only the interaction type, optional session title, bounded first-question summary, question count when greater than one, and DSH link. It doesn't contain `detail`, plans, complete options, option descriptions, tool arguments, conversation history, answer drafts, credentials, or full recipient IDs in logs.
 
 CLI resolution failure prevents plugin activation. Per-recipient delivery failures, nonzero exits, timeouts, and malformed JSON output are logged and contained. They cannot reject, cancel, or delay the original user-question answer.
+
+## Dev Note
+
+None.
 
 ## Model Experience
 

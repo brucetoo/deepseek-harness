@@ -56,7 +56,7 @@ interface StagedLocalPlugin {
   readonly sha256: string
 }
 
-/** Provenance recorded beside one desktop Host runtime. */
+/** Source and runtime identity recorded beside one desktop Host runtime. */
 export interface DesktopStageMetadata {
   readonly commit: string
   readonly lockfileSha256: string
@@ -65,7 +65,7 @@ export interface DesktopStageMetadata {
   readonly arch: string
 }
 
-/** Resolved repository and runtime facts used to create stage provenance. */
+/** Resolved repository and runtime facts used to create stage metadata. */
 export interface DesktopStageMetadataDependencies {
   readonly readCommit: () => Promise<string>
   readonly nodeVersion: string
@@ -77,7 +77,7 @@ export interface DesktopStageMetadataDependencies {
  * Record the exact source revision, dependency lock, and runtime identity.
  * @param root - Repository root containing `pnpm-lock.yaml`.
  * @param dependencies - Commit reader and target runtime identity.
- * @returns Provenance persisted with the staged runtime.
+ * @returns Metadata persisted with the staged runtime.
  */
 export const createDesktopStageMetadata = async (
   root: string,
@@ -466,7 +466,7 @@ export interface DesktopStageValidationDependencies {
 /**
  * Validate a staged runtime without consulting the source checkout.
  * @param stage - Candidate stage root.
- * @param expectedMetadata - Provenance expected by the caller.
+ * @param expectedMetadata - Source and runtime identity expected by the caller.
  * @param dependencies - Optional Node version probe.
  */
 export const validateDesktopStage = async (

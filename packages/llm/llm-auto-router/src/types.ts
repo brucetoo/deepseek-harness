@@ -5,6 +5,12 @@ import type { RouteKey } from './brand.ts'
 
 export type { AutoRouteAttemptId, RouteKey } from './brand.ts'
 
+/** Named automatic-routing pool used by admission previews. */
+export interface AutoModelSelection {
+  /** Pool to inspect; omission uses `default`. */
+  readonly pool?: string
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Physical provider/model selected for one automatic request attempt. */

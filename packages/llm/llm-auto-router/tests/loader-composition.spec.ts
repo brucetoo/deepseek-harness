@@ -6,13 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import AgentRegistry, { installModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as autoRouter from '../src/index.ts'
 
@@ -89,8 +91,10 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-llm', LlmRuntime],
     ['@deepseek-ai/dsh-session', SessionStore],
+    ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
     ['@deepseek-ai/dsh-tools', ToolRuntime],
+    ['@deepseek-ai/dsh-tool-executor-native', NativeToolExecutor],
     ['@deepseek-ai/dsh-agent', AgentRegistry],
     ['@deepseek-ai/dsh-token-meter', TokenMeter],
     ['@deepseek-ai/dsh-llm-auto-router', autoRouter],
@@ -116,8 +120,10 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-tool-executor-native'",
       "- name: '@deepseek-ai/dsh-agent'",
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-llm-auto-router'",
@@ -154,12 +160,8 @@ describe('real Loader composition', () => {
     const { agent } = await loaded.agents.create({
       sessionId: SessionId('loader-auto-router'),
       agentOptions: { provider: 'auto', model: 'auto' },
-      setup(agentCtx) {
-        const subject = agentCtx.agent
-        if (subject === undefined) throw new Error('test setup has no Agent')
-        subject.session.append('model/selection', { kind: 'auto' })
-        const selection: ModelSelectionRef = { current: { kind: 'auto' }, assembled: undefined }
-        installModelSelection(agentCtx, selection)
+      setup(_agentCtx, subject) {
+        subject.model.select({ provider: 'auto', model: 'auto' })
       },
     })
     agent.followup(createUserMessage({
@@ -168,17 +170,18 @@ describe('real Loader composition', () => {
     }))
     await agent.whenIdle()
 
-    expect(routeA.requests).toBe(1)
+    expect(routeA.requests, JSON.stringify(agent.session.snapshotEvents())).toBe(1)
     expect(routeB.requests).toBe(1)
-    const routeEvents = agent.session.events.filter(event => event.type === 'llm/auto-route')
+    const events = agent.session.snapshotEvents()
+    const routeEvents = events.filter(event => event.type === 'llm/auto-route')
     expect(routeEvents.map(event => event.data)).toMatchObject([
       { attempt: 1, provider: 'route-a', model: 'model-a', reason: 'normal' },
       { attempt: 2, provider: 'route-b', model: 'model-b', reason: 'failover' },
     ])
-    expect(agent.session.events.filter(event => event.type === 'llm/auto-failover')).toMatchObject([{
+    expect(events.filter(event => event.type === 'llm/auto-failover')).toMatchObject([{
       data: { attempt: 1, fromProvider: 'route-a', fromModel: 'model-a', failureCode: 'SERVER' },
     }])
-    const headers = agent.session.events.filter(event => event.type === 'request/header')
+    const headers = events.filter(event => event.type === 'request/header')
     expect(headers.map(event => event.data.header.config)).toMatchObject([
       { provider: 'route-a', model: 'model-a' },
       { provider: 'route-b', model: 'model-b' },
@@ -186,7 +189,7 @@ describe('real Loader composition', () => {
     expect(headers.some(event => event.data.header.config.provider === 'auto'
       || event.data.header.config.model === 'auto')).toBe(false)
 
-    const ordered = agent.session.events.filter(event =>
+    const ordered = events.filter(event =>
       event.type === 'model/selection'
       || event.type === 'turn/start'
       || event.type === 'request/header'
@@ -203,7 +206,7 @@ describe('real Loader composition', () => {
       'llm/auto-route',
       'assistant/message',
     ])
-    expect(agent.session.deriveMessages()).toMatchObject([
+    expect(agent.session.deriveMessages().filter(message => message.role !== 'system')).toMatchObject([
       { role: 'user' },
       {
         role: 'assistant',
@@ -218,8 +221,10 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-tool-executor-native'",
       "- name: '@deepseek-ai/dsh-agent'",
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-llm-auto-router'",
@@ -246,11 +251,8 @@ describe('real Loader composition', () => {
     const { agent } = await loaded.agents.create({
       sessionId: SessionId('loader-auto-router-committed'),
       agentOptions: { provider: 'auto', model: 'auto' },
-      setup(agentCtx) {
-        const subject = agentCtx.agent
-        if (subject === undefined) throw new Error('test setup has no Agent')
-        subject.session.append('model/selection', { kind: 'auto' })
-        installModelSelection(agentCtx, { current: { kind: 'auto' }, assembled: undefined })
+      setup(_agentCtx, subject) {
+        subject.model.select({ provider: 'auto', model: 'auto' })
       },
     })
     agent.followup(createUserMessage({
@@ -258,9 +260,9 @@ describe('real Loader composition', () => {
     }))
     await agent.whenIdle()
 
-    expect(routeA.requests).toBe(1)
+    expect(routeA.requests, JSON.stringify(agent.session.snapshotEvents())).toBe(1)
     expect(routeB.requests).toBe(0)
-    expect(agent.session.events.filter(event => event.type === 'llm/auto-failover')).toEqual([])
-    expect(agent.session.events.filter(event => event.type === 'llm/auto-route')).toHaveLength(1)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/auto-failover')).toEqual([])
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/auto-route')).toHaveLength(1)
   })
 })

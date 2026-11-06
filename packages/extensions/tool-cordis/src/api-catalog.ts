@@ -119,10 +119,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Owns the default model selection independently of any Host or transport. Each operation reads the owning Config references.',
     methods: [
       {
-        signature: 'currentSelection(): ModelSelectionIntent',
+        signature: 'currentSelection(): ModelSelection',
         description: 'Read the current default model selection.',
         parameters: [],
-        returns: 'a detached logical model-selection intent.',
+        returns: 'a detached provider, model, and optional reasoning selection.',
       },
       {
         signature: 'async saveSelection(next: ModelSelection): Promise<void>',
@@ -550,6 +550,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'the key, the method, the surface, and the cancel signal.' }],
         returns: '`authorized` once the flow\'s record is committed during this attempt and observed, or `cancelled` when the human declined or the caller withdrew.',
         throws: ['{AuthorizationError} code `NO_FLOW` when nothing claims the key, `UNKNOWN_METHOD` when the named method is not one the flow offers, `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or `NOT_COMMITTED` when the flow resolved without committing a record during the attempt.'],
+      },
+    ],
+  },
+  {
+    key: 'browser',
+    summary: 'One visible ephemeral browser owned by an exact live Agent and therefore by its Session.',
+    description: 'One visible ephemeral browser owned by an exact live Agent and therefore by its Session. Implementations serialize calls and release ownership only after complete worker and profile cleanup.',
+    methods: [
+      {
+        signature: 'abstract open( owner: Agent, request: BrowserOpenRequest, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Open a new ephemeral browser after the Consumer obtains approval.',
+        parameters: [{ name: 'owner', description: 'Exact Agent whose Session owns the browser.' }, { name: 'request', description: 'Canonical credential-free HTTP(S) target.' }, { name: 'signal', description: 'Cancellation of launch and navigation.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract snapshot(owner: Agent, signal?: AbortSignal): Promise<BrowserObservation>',
+        description: 'Observe the current page without changing it.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'signal', description: 'Cancellation of snapshot collection.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract prepare( owner: Agent, action: BrowserElementAction, signal?: AbortSignal, ): Promise<BrowserPreparedAction>',
+        description: 'Resolve and retain one exact element without acting on it.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'action', description: 'Accessible target and requested mutation.' }, { name: 'signal', description: 'Cancellation of element resolution.' }],
+        returns: 'Prepared identity and approval-visible fingerprint.',
+      },
+      {
+        signature: 'abstract commit( owner: Agent, id: BrowserPreparedActionId, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Recheck and commit a previously prepared element action exactly once.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'id', description: 'Provider-issued prepared action identity.' }, { name: 'signal', description: 'Cancellation of action and resulting observation.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract release(owner: Agent, id: BrowserPreparedActionId): Promise<void>',
+        description: 'Release one prepared action without executing it. Implementations make repeated release harmless so every fail-closed path can converge here.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'id', description: 'Provider-issued prepared action identity.' }],
+      },
+      {
+        signature: 'abstract wait( owner: Agent, request: BrowserWaitRequest, signal?: AbortSignal, ): Promise<BrowserObservation>',
+        description: 'Wait for a bounded interval, then observe the current page.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }, { name: 'request', description: 'Duration selected by the Consumer within its configured cap.' }, { name: 'signal', description: 'Cancellation of the wait.' }],
+        returns: 'Current rendered page observation.',
+      },
+      {
+        signature: 'abstract close(owner: Agent): Promise<void>',
+        description: 'Close the owner\'s browser and await worker and profile quiescence.',
+        parameters: [{ name: 'owner', description: 'Exact owning Agent.' }],
       },
     ],
   },
@@ -1757,6 +1804,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'readonly cordis: CordisRuntimeTreeReader',
         description: 'Read-only Cordis topology queries independent of CDP sessions.',
         parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'invariants',
+    summary: 'Package-owned invariant registry with global and regex-based selection.',
+    description: 'Package-owned invariant registry with global and regex-based selection.',
+    methods: [
+      {
+        signature: 'register(packageName: string, installer: InvariantInstaller): () => void',
+        description: 'Register one package\'s invariant installer. The package name is reserved even when filtering disables its checks. Enabled installers run in a child fiber; failure disposes that fiber and releases the reservation.',
+        parameters: [{ name: 'packageName', description: 'full npm package name that owns the contribution.' }, { name: 'installer', description: 'listener or startup-check installer for the child context.' }],
+        returns: 'an effect-scoped disposer for the registration.',
       },
     ],
   },
@@ -4813,6 +4873,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
+    name: 'agent/resolve-model',
+    mode: 'waterfall',
+    signature: '\'agent/resolve-model\'(this: Scoped<Agent>, payload: { agent: Agent; selection: Readonly<ModelSelection>; phase: \'preparation\' | \'attempt\'; turn: number; step: number; signal: AbortSignal }, next: () => Promise<ModelSelection>): Promise<ModelSelection>',
+    summary: 'Resolve a recorded or configured model selection to the concrete route used for one step preparation or request attempt.',
+    description: 'Resolve a recorded or configured model selection to the concrete route used for one step preparation or request attempt. Listeners call `next()` to preserve or wrap the current proposal. The loop invokes this before tool and system-prompt assembly, then again before each request attempt so recovery may replace a failed physical route. The returned selection affects the request header but does not replace the Agent\'s durable selection.',
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s cancellation signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
     name: 'agent/status',
     mode: 'emit',
     signature: '\'agent/status\'(this: Scoped<Agent>, payload: { agent: Agent; status: AgentStatus }): void',
@@ -5357,6 +5425,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'exec', description: 'the execution object that traversed the pipeline.' }, { name: 'result', description: 'a deep-frozen snapshot of the final returned result.' }],
   },
   {
+    name: 'user-question/requested',
+    mode: 'emit',
+    signature: '\'user-question/requested\'(request: Readonly<AskUserQuestionRequest>): void',
+    summary: 'A validated question request entered the active provider.',
+    description: 'A validated question request entered the active provider. Observers may notify external surfaces but cannot answer, cancel, or delay the request. Observer failures are contained and cannot change the provider outcome.',
+    parameters: [{ name: 'request', description: 'Already validated request accepted by the active provider.' }],
+  },
+  {
     name: 'user-questions/request',
     mode: 'waterfall',
     signature: '\'user-questions/request\'( this: Scoped<Agent>, request: AskUserQuestionRequestEvent, next: () => Promise<AskUserQuestionAnswer>, ): Promise<AskUserQuestionAnswer>',
@@ -5805,8 +5881,56 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'BrowserClickRequest',
+    declaration: 'export interface BrowserClickRequest {\n    readonly kind: \'click\';\n    readonly target: BrowserElementTarget;\n}',
+  },
+  {
+    name: 'BrowserElementAction',
+    declaration: 'export type BrowserElementAction = BrowserClickRequest | BrowserFillRequest | BrowserSelectRequest;',
+  },
+  {
+    name: 'BrowserElementFingerprint',
+    declaration: 'export interface BrowserElementFingerprint {\n    readonly tagName: string;\n    readonly role: string;\n    readonly accessibleName: string;\n    readonly inputType?: string;\n    readonly href?: string;\n    readonly formAction?: string;\n}',
+  },
+  {
+    name: 'BrowserElementTarget',
+    declaration: 'export interface BrowserElementTarget {\n    readonly role: string;\n    readonly name: string;\n    readonly index?: number;\n}',
+  },
+  {
+    name: 'BrowserFillRequest',
+    declaration: 'export interface BrowserFillRequest {\n    readonly kind: \'fill\';\n    readonly target: BrowserElementTarget;\n    readonly value: string;\n}',
+  },
+  {
+    name: 'BrowserObservation',
+    declaration: 'export interface BrowserObservation {\n    readonly url: string;\n    readonly title: string;\n    readonly snapshot: string;\n}',
+  },
+  {
+    name: 'BrowserOpenRequest',
+    declaration: 'export interface BrowserOpenRequest {\n    readonly url: string;\n}',
+  },
+  {
+    name: 'BrowserPreparedAction',
+    declaration: 'export interface BrowserPreparedAction {\n    readonly id: BrowserPreparedActionIdValue;\n    readonly owner: Agent;\n    readonly pageUrl: string;\n    readonly action: BrowserElementAction;\n    readonly fingerprint: BrowserElementFingerprint;\n}',
+  },
+  {
+    name: 'BrowserPreparedActionId',
+    declaration: 'export type BrowserPreparedActionId = BrowserPreparedActionIdValue;',
+  },
+  {
+    name: 'BrowserPreparedActionIdValue',
+    declaration: 'export type BrowserPreparedActionIdValue = Branded<\'BrowserPreparedActionId\'>;',
+  },
+  {
+    name: 'BrowserSelectRequest',
+    declaration: 'export interface BrowserSelectRequest {\n    readonly kind: \'select\';\n    readonly target: BrowserElementTarget;\n    readonly option: string;\n}',
+  },
+  {
     name: 'BrowserUseProviderName',
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
+  },
+  {
+    name: 'BrowserWaitRequest',
+    declaration: 'export interface BrowserWaitRequest {\n    readonly durationMs: number;\n}',
   },
   {
     name: 'BundleDetail',
@@ -6787,6 +6911,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InstallSpecKind',
     declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
+  },
+  {
+    name: 'InvariantFailure',
+    declaration: 'export type InvariantFailure = (message: string) => never;',
+  },
+  {
+    name: 'InvariantInstaller',
+    declaration: 'export interface InvariantInstaller {\n    (ctx: Context, fail: InvariantFailure): void | Promise<void>;\n    readonly inject?: Inject;\n}',
   },
   {
     name: 'InvocationDescriptor',
@@ -7875,6 +8007,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReasoningEffortId',
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
+  },
+  {
+    name: 'Recipient',
+    declaration: 'export interface Recipient {\n    type: \'open_id\' | \'user_id\' | \'chat_id\' | \'email\';\n    id: string;\n}',
+  },
+  {
+    name: 'RecipientTestResult',
+    declaration: 'export interface RecipientTestResult {\n    status: RecipientTestStatus;\n}',
+  },
+  {
+    name: 'RecipientTestStatus',
+    declaration: 'export type RecipientTestStatus = \'sent\' | \'busy\' | \'not-configured\' | \'delivery-failed\';',
   },
   {
     name: 'RecommendationDetails',

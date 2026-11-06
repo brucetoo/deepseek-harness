@@ -1,8 +1,24 @@
+---
+description: "注册由包拥有的运行时关系检查，并通过包名过滤器选择检查。"
+kind: "package-reference"
+---
+
 # dsh-invariants
 
 [English](README.md) | 中文
 
+## 概述
+
 用于包自有运行时不变量检查的可配置注册表服务。根插件注册 `ctx.invariants`；它不包含产品检查或产品包导入。每个工作区包都发布一个 `./invariant` 配套入口，用于注册其精确 npm 包名。
+
+## 目录
+
+- 服务：InvariantRegistry
+- 包配套入口
+- 组合
+- 开发备注
+- 模型体验
+- 已知限制与暂缓事项
 
 ## 服务：`InvariantRegistry`（`ctx.invariants`）
 
@@ -54,7 +70,6 @@ interface Config {
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 
 declare const ctx: Context
 
@@ -63,12 +78,15 @@ ctx.plugin(InvariantRegistry, {
   package_allowlist: ['^@deepseek-ai/dsh-'],
   package_blocklist: ['^@deepseek-ai/dsh-agent-loop$'],
 })
-ctx.plugin(SessionInvariant)
 ```
 
 标准 agent 组合挂载服务和 4 个核心有状态配套入口。自定义组合为希望检查其约定的其他已加载包显式添加配套入口；过滤器可以在不改变包入口的情况下禁用或选择注册。
 
 每个普通 Vitest 拓扑都挂载显式启用的服务和当前测试包的配套入口。聚焦套件覆盖可执行配套入口的合法与违规观测，一个穷尽拓扑则挂载全部配套入口，以证明注册和 dispose 接线。
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

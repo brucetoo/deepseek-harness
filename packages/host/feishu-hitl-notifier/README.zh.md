@@ -1,8 +1,26 @@
+---
+description: "当 DSH 等待用户问题回答时通知已配置的飞书接收者，并提供会话返回链接。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-feishu-hitl-notifier
 
 [English](README.md) | 中文
 
+## 概述
+
 这是一个可选的 Host 插件。当带 Agent 的 DSH 用户问题进入活动回答 Provider 时，插件会发送一条飞书通知。卡片只跳回 DSH Web，不会回答问题，也不会改变 Provider 的结果。
+
+## 目录
+
+- 运行要求
+- 将插件加入 profile
+- 配置
+- DSH Web 设置
+- 通知行为
+- 开发备注
+- 模型体验
+- 已知限制与暂缓事项
 
 ## 运行要求
 
@@ -71,6 +89,10 @@ feishu-cli --config <absolute-path> msg send \
 卡片只包含交互类型、可选会话标题、有界首问题摘要、问题数（大于一时）和 DSH 链接。它不包含 `detail`、计划正文、完整选项、选项描述、工具参数、会话历史、回答草稿或凭据；日志也不会记录完整收件人 ID。
 
 CLI 解析失败会阻止插件激活。单个收件人的发送失败、非零退出、超时和异常 JSON 输出只会记录日志并被隔离，不能拒绝、取消或延迟原用户问题的回答。
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

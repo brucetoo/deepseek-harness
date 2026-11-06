@@ -1,8 +1,23 @@
+---
+description: "在由 Playwright 控制的隔离 Electron worker 中运行公共浏览器服务。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-playwright-electron
 
 [English](README.md) | 中文
 
-[`@deepseek-ai/dsh-browser`](../browser/README.zh.md) 的桌面 Service Provider。它以专用 worker 模式启动打包的 Electron 可执行文件，从有界启动输出中发现随机 loopback CDP 端点，并把 `playwright-core` 连接到 worker 的唯一页面。
+## 概述
+
+在隔离且可见的 Electron worker 中运行公共浏览器服务。每次打开都使用私有临时 profile、有界启动协议和一个由 Playwright 控制的页面。
+
+## 目录
+
+- 运行时
+- 配置
+- 开发备注
+- 模型体验
+- 已知限制与暂缓事项
 
 ## 运行时
 
@@ -24,6 +39,10 @@ Provider dispose、Agent dispose、取消、显式关闭、worker 退出和启�
 | `processGraceMs` | `2000` | worker 终止宽限期 |
 | `readinessMaxBytes` | `16384` | 启动输出与协议行上限 |
 | `snapshotDepth` | `8` | ARIA 快照最大深度 |
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

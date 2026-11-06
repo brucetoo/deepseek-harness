@@ -10,9 +10,11 @@ import BrowserRuntime, {
   type BrowserPreparedActionId as BrowserPreparedActionIdType,
   type BrowserWaitRequest,
 } from '@deepseek-ai/dsh-browser'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import ApprovalService, {
   type ApprovalOutcome,
@@ -98,6 +100,7 @@ const createHarness = async (
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(ApprovalService)
   await ctx.plugin(StubBrowserRuntime)
   const browser = ctx.browser as StubBrowserRuntime
@@ -120,10 +123,10 @@ const createHarness = async (
     setOutcome: (value) => {
       outcome = value
     },
-    call: (name, args) => ctx.tools.execute({
+    call: (name, args) => executeToolFixture(ctx, {
       agent,
       arguments: args,
-      callId: CallId(`browser-call-${++nextCall}`),
+      callId: ToolCallId(`browser-call-${++nextCall}`),
       name,
       signal: new AbortController().signal,
     }),

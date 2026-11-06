@@ -9,6 +9,7 @@ import type { Volatile } from '@deepseek-ai/cordis'
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-config-editor'
 
@@ -32,7 +33,6 @@ export interface Config {
 /** Project stored settings onto the Agent-facing selection type. */
 function selection(settings: { provider: string; model: string; reasoningEffort?: string }): ModelSelection {
   return {
-    kind: 'model',
     provider: settings.provider,
     model: settings.model,
     ...settings.reasoningEffort === undefined
@@ -62,7 +62,7 @@ export class AgentDefaultModelConfig extends Service {
 
   /**
    * Read the current default model selection.
-   * @returns a detached logical model-selection intent.
+   * @returns a detached provider, model, and optional reasoning selection.
    */
   currentSelection(): ModelSelection {
     const reasoningEffort = this.config.reasoningEffort.get()

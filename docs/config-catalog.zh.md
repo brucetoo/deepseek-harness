@@ -473,6 +473,41 @@ export type Config = LocalConfig
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-bash-sandbox -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-browser-playwright-electron -->
+<a id="deepseek-aidsh-browser-playwright-electron"></a>
+
+## `@deepseek-ai/dsh-browser-playwright-electron`
+
+- `inject`: `subprocess`
+- `source`: [`packages/browser/browser-playwright-electron/src/index.ts:43`](../packages/browser/browser-playwright-electron/src/index.ts)
+
+```ts config-catalog
+/** Provider configuration resolved by the desktop Host composition. */
+export interface Config {
+  /** Electron executable used for the dedicated worker. */
+  readonly electronExecutable: string
+  /** Desktop application entry loaded by Electron. */
+  readonly applicationEntry: string
+  /** Parent directory for ephemeral Chromium profiles. */
+  readonly tempRoot: string
+  /** Milliseconds allowed for worker and CDP readiness. */
+  readonly launchTimeoutMs: number
+  /** Milliseconds allowed for Playwright and worker-protocol operations. */
+  readonly operationTimeoutMs: number
+  /** Milliseconds allowed for navigation policy events to settle after an operation. */
+  readonly navigationSettleMs: number
+  /** Milliseconds allowed for driver cleanup and process-tree quiescence. */
+  readonly cleanupTimeoutMs: number
+  /** Milliseconds between graceful and forced worker termination. */
+  readonly processGraceMs: number
+  /** Maximum bytes accepted from one worker protocol phase. */
+  readonly readinessMaxBytes: number
+  /** Maximum depth of returned ARIA snapshots. */
+  readonly snapshotDepth: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-browser-playwright-electron -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-connection -->
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -1532,6 +1567,58 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-worktree -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-feishu-hitl-notifier -->
+<a id="deepseek-aidsh-feishu-hitl-notifier"></a>
+
+## `@deepseek-ai/dsh-feishu-hitl-notifier`
+
+- `inject`: `userQuestions` · `sessionTitle` · `subprocess`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/host/feishu-hitl-notifier/src/index.ts:34`](../packages/host/feishu-hitl-notifier/src/index.ts)
+
+```ts config-catalog
+/** Loader configuration for Feishu user-question notifications. */
+export interface Config {
+  /** User-editable notification configuration. */
+  configuration: Volatile<NotifierConfiguration>
+  /** Deployment-owned executable, credential path, and timeout. */
+  cli?: CliConfig
+}
+
+/** Complete notifier settings persisted and replaced atomically. */
+export interface NotifierConfiguration {
+  /** Whether admitted user questions send notification cards. */
+  readonly enabled: boolean
+  /** Absolute HTTP(S) application URL used for session links. */
+  readonly webBaseUrl: string
+  /** Feishu destinations that receive each notification. */
+  readonly recipients: readonly Recipient[]
+  /** Maximum Unicode codepoints included in the question summary. */
+  readonly summaryMaxChars: number
+  /** Whether an available session title appears in the card. */
+  readonly includeSessionTitle: boolean
+}
+
+/** Deployment-owned `feishu-cli` process settings. */
+export interface CliConfig {
+  /** Executable name or path resolved through the subprocess provider. */
+  executable?: string
+  /** Credential configuration path passed to `feishu-cli`. */
+  configPath?: string
+  /** Maximum duration of one delivery attempt in milliseconds. */
+  timeoutMs?: number
+}
+
+/** One Feishu user or group destination accepted by `feishu-cli msg send`. */
+export interface Recipient {
+  /** Identifier kind interpreted by Feishu. */
+  type: 'open_id' | 'user_id' | 'chat_id' | 'email'
+  /** Opaque destination identifier for the selected kind. */
+  id: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-feishu-hitl-notifier -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -1834,7 +1921,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-webserver`
 
-- `source`: [`packages/host/webserver/src/index.ts:97`](../packages/host/webserver/src/index.ts)
+- `source`: [`packages/host/webserver/src/index.ts:98`](../packages/host/webserver/src/index.ts)
 
 ```ts config-catalog
 /** Web server listen, TLS, and response-compression config. */
@@ -1851,6 +1938,8 @@ export interface Config {
   host: string
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Environment variable containing the bearer token required by every socket-backed request. */
+  bearerTokenEnv?: string
   /**
    * Serve HTTPS with this certificate and key instead of plain HTTP. Both files
    * are read once, before the listener binds: an unreadable or empty file,
@@ -1882,6 +1971,26 @@ export interface TlsConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-invariants -->
+<a id="deepseek-aidsh-invariants"></a>
+
+## `@deepseek-ai/dsh-invariants`
+
+- `source`: [`packages/runtime-diagnostics/invariants/src/index.ts:15`](../packages/runtime-diagnostics/invariants/src/index.ts)
+
+```ts config-catalog
+/** Runtime invariant selection configured on the service plugin. */
+export interface Config {
+  /** Global switch; defaults to `true`. */
+  readonly enabled?: boolean
+  /** Case-sensitive JavaScript regex sources that admit package names; empty admits all. */
+  readonly package_allowlist?: string[]
+  /** Case-sensitive JavaScript regex sources that exclude package names after allowlist matching. */
+  readonly package_blocklist?: string[]
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-invariants -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
 <a id="deepseek-aidsh-jobs-local"></a>
 
@@ -1910,6 +2019,77 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-auto-router -->
+<a id="deepseek-aidsh-llm-auto-router"></a>
+
+## `@deepseek-ai/dsh-llm-auto-router`
+
+- `inject`: `agents` · `llm` · `sessions` · `tokenMeter`
+- `source`: [`packages/llm/llm-auto-router/src/index.ts:69`](../packages/llm/llm-auto-router/src/index.ts)
+
+```ts config-catalog
+/** Raw automatic-router plugin configuration. */
+export interface Config {
+  /** Virtual provider that invokes automatic routing. */
+  readonly virtualProvider?: string
+  /** Virtual model that invokes automatic routing. */
+  readonly virtualModel?: string
+  /** Named route-pattern pools. */
+  readonly pools?: Record<string, PoolConfig>
+  /** Explicit route policy keyed by canonical `provider/model` identity. */
+  readonly models?: Record<string, RouteConfig>
+  /** Maximum physical failovers within one logical step. */
+  readonly maxFailoversPerStep?: number
+  /** Tokens reserved beyond measured input and requested output. */
+  readonly tokenSafetyReserve?: number
+  /** Weight of each new timing sample in the latency EWMA. */
+  readonly ewmaAlpha?: number
+  /** Consecutive failures that open a route circuit. */
+  readonly failureThreshold?: number
+  /** Initial circuit-open cooldown. */
+  readonly baseCooldownMs?: number
+  /** Maximum circuit-open cooldown. */
+  readonly maxCooldownMs?: number
+  /** Concurrent probes allowed for a half-open route. */
+  readonly halfOpenConcurrency?: number
+  /** Score reduction applied to unsampled routes. */
+  readonly explorationWeight?: number
+  /** Relative latency, load, and failure score weights. */
+  readonly scoring?: ScoringWeights
+}
+
+/** Raw named pool configuration accepted from composition. */
+export interface PoolConfig {
+  /** Included provider/model patterns. */
+  readonly include?: string[]
+  /** Excluded provider/model patterns. */
+  readonly exclude?: string[]
+}
+
+/** Loader configuration for one explicit provider/model route. */
+export interface RouteConfig {
+  /** Named pool that owns this route. */
+  readonly pool: string
+  /** Whether selection may use this route. */
+  readonly enabled?: boolean
+  /** Non-negative score multiplier; lower values are preferred. */
+  readonly preferenceMultiplier?: number
+  /** Maximum concurrent attempts on this route. */
+  readonly concurrencyLimit: number
+}
+
+/** Relative contributions to a route's selection score. */
+export interface ScoringWeights {
+  /** Relative first-token latency contribution. */
+  readonly latency: number
+  /** Relative in-flight load contribution. */
+  readonly load: number
+  /** Relative recent-failure contribution. */
+  readonly failure: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-auto-router -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-account -->
 <a id="deepseek-aidsh-llm-deepseek-account"></a>
@@ -1946,6 +2126,55 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-api-key -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-modelhub -->
+<a id="deepseek-aidsh-llm-modelhub"></a>
+
+## `@deepseek-ai/dsh-llm-modelhub`
+
+- `inject`: `llm`
+- `refs`: `Model` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+- `source`: [`packages/llm/llm-modelhub/src/config.ts:53`](../packages/llm/llm-modelhub/src/config.ts)
+
+```ts config-catalog
+/** ModelHub plugin configuration and `llm-modelhub` settings-section value. */
+export interface Config {
+  /** Exact HTTP(S) POST target; the plugin never appends `/chat/completions`. */
+  endpoint?: string
+  /** Credential reference resolved per request. */
+  apiKeyEnv?: string
+  /** Models exposed on the fixed `bytedance-modelhub` route. */
+  models?: ModelHubModelConfig[]
+  /** Context capacity used when a model entry omits one. */
+  defaultContextWindow?: number
+  /** Output capability used when a model entry omits one. */
+  defaultMaxTokens?: number
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Maximum accumulated base64 image payload per request. */
+  maxRequestImageBytes?: number
+  /** Provider-owned model-request retry policy. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** Configuration for one ModelHub model. */
+export interface ModelHubModelConfig {
+  /** Model id sent to ModelHub. */
+  id: string
+  /** Display name; defaults to {@link id}. */
+  name?: string
+  /** Maximum combined request and response context in tokens. */
+  contextWindow?: number
+  /** Maximum output tokens and default request cap when configured. */
+  maxTokens?: number
+  /** Request modalities; defaults to text. */
+  input?: ModelHubModality[]
+}
+
+/** One input modality accepted by a configured ModelHub model. */
+export type ModelHubModality = Model<'openai-completions'>['input'][number]
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-modelhub -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-pi-ai -->
 <a id="deepseek-aidsh-llm-pi-ai"></a>
@@ -4069,6 +4298,27 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-bash-persistent -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-browser -->
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+- `inject`: `tools` · `browser` · `approval` · `systemPrompt`
+- `source`: [`packages/browser/tool-browser/src/index.ts:45`](../packages/browser/tool-browser/src/index.ts)
+
+```ts config-catalog
+/** Model-facing browser tool configuration. */
+export interface Config {
+  /** Maximum UTF-8 bytes retained in one complete observation. */
+  readonly maxOutputBytes?: number
+  /** Cooperative execution budget attached to each tool definition. */
+  readonly timeoutMs?: number
+  /** Maximum duration accepted by `browser_wait`. */
+  readonly maxWaitMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-browser -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-executor-ptc -->
 <a id="deepseek-aidsh-tool-executor-ptc"></a>
 
@@ -4094,7 +4344,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-fs`
 
 - `inject`: `tools` · `fs` · `systemPrompt` · `workingDirectory`
-- `source`: [`packages/fs/tool-fs/src/index.ts:27`](../packages/fs/tool-fs/src/index.ts)
+- `source`: [`packages/fs/tool-fs/src/index.ts:28`](../packages/fs/tool-fs/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `Config` supplies the defaults). */
@@ -5023,6 +5273,7 @@ export interface Config {
 | `package` | `class` | `inject` | `source` |
 | --- | --- | --- | --- |
 | `@deepseek-ai/dsh-attachment` | `AttachmentStore` | — | [`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts) |
+| `@deepseek-ai/dsh-browser` | `BrowserRuntime` | — | [`packages/browser/browser/src/index.ts`](../packages/browser/browser/src/index.ts) |
 | `@deepseek-ai/dsh-compaction` | `CompactionEngine` | — | [`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts) |
 | `@deepseek-ai/dsh-credentials` | `CredentialProvider` | — | [`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts) |
 | `@deepseek-ai/dsh-deepseek-account` | `DeepSeekAccount` | — | [`packages/credentials/deepseek-account/src/index.ts`](../packages/credentials/deepseek-account/src/index.ts) |

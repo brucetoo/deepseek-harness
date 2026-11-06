@@ -314,6 +314,29 @@ Types: [Agent](core.md) · [ToolCallId](core.md)
 
 Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)
 
+<a id="user-question-events"></a>
+
+### `user-question/*` events
+
+<a id="user-questionrequested--emit"></a>
+
+#### `user-question/requested` — emit
+
+A validated question request entered the active provider. Observers may notify external surfaces but cannot answer, cancel, or delay the request. Observer failures are contained and cannot change the provider outcome.
+
+```ts cordis-catalog
+/**
+ * A validated question request entered the active provider. Observers may
+ * notify external surfaces but cannot answer, cancel, or delay the request.
+ * Observer failures are contained and cannot change the provider outcome.
+ * @param request - Already validated request accepted by the active provider.
+ * @mode emit
+ */
+'user-question/requested'(request: Readonly<AskUserQuestionRequest>): void
+```
+
+Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)
+
 <a id="user-questions-events"></a>
 
 ### `user-questions/*` events

@@ -29,6 +29,7 @@ import type { ModelSelectInjected } from './slots.ts'
 import { ModelSelect } from './ModelSelect.tsx'
 import { en, ja, es, fr, de, ru, pt, zh, type ModelKey } from './locales.ts'
 import { orderModelProviders } from './provider-order.ts'
+import { concreteSelection } from './concrete-selection.ts'
 
 export { ModelDirectory } from './directory.ts'
 export type { ModelDirectoryState } from './directory.ts'
@@ -48,9 +49,19 @@ function rowId(providerId: string, modelId: string): string {
   return `${providerId}/${modelId}`
 }
 
+const AUTO_ROW_ID = 'virtual/auto'
+const AUTO_SELECTION = { provider: 'auto', model: 'auto' } as const satisfies ModelSelection
+
 /** Flatten the directory into popup rows; failure rows are listed for visibility but never selectable. */
 function optionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): SelectOption[] {
-  const rows: SelectOption[] = []
+  const rows: SelectOption[] = [{
+    id: AUTO_ROW_ID,
+    label: t('auto.label'),
+    detail: t('auto.description'),
+    group: { name: 'auto', label: t('auto.label') },
+    ...(directory.current?.provider === AUTO_SELECTION.provider
+      && directory.current.model === AUTO_SELECTION.model ? { active: true } : {}),
+  }]
   for (const group of orderModelProviders(directory.groups)) {
     const name = group.id === 'deepseek-account' ? t('provider.account') : group.name
     for (const model of group.models) {
@@ -82,8 +93,8 @@ function optionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): Sel
  * @param id - the picked row id.
  * @returns the row's model selection, or undefined for failure rows / stale ids.
  */
-function selectionOf(state: ModelDirectoryState, id: string): ModelSelectionIntent | undefined {
-  if (id === AUTO_ROW_ID) return { kind: 'auto' }
+function selectionOf(state: ModelDirectoryState, id: string): ModelSelection | undefined {
+  if (id === AUTO_ROW_ID) return AUTO_SELECTION
   for (const group of state.groups) {
     for (const model of group.models) {
       if (rowId(group.id, model.id) !== id) continue

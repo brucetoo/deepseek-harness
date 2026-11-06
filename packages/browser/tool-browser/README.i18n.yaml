@@ -1,6 +1,58 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/browser/tool-browser/README.md
-README.md: c294e1c416c18aa0df90c90927718282757940dc
-README.zh.md: c7085e69d987e79ecc5d6a73ee6c152e25dcf703
+/:
+  en: 8bbc10e54584d21c
+  zh: d044b58c683fca65
+/deepseek-ai-dsh-tool-browser:
+  en: 90b6f0db6119bb72
+  zh: 5eebadcb77e458ee
+/deepseek-ai-dsh-tool-browser/summary:
+  en: f8030c5d9865f914
+  zh: f36608c0bfb1b05b
+/deepseek-ai-dsh-tool-browser/table-of-contents:
+  en: e75420a4d457badc
+  zh: 317fb3f81acc679c
+/deepseek-ai-dsh-tool-browser/tools:
+  en: b93f7a7dc0b7ed87
+  zh: a746968b316345f7
+/deepseek-ai-dsh-tool-browser/config:
+  en: d9b727e54e94764f
+  zh: 598403acf31f4027
+/deepseek-ai-dsh-tool-browser/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269
+/deepseek-ai-dsh-tool-browser/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-tool-browser/model-experience/system-prompt:
+  en: cf78b9dd5596495f
+  zh: bd44560f8c2435e8
+/deepseek-ai-dsh-tool-browser/model-experience/system-prompt/what-the-model-sees:
+  en: 244b352817ad832a
+  zh: aa474c5fe3a4c885
+/deepseek-ai-dsh-tool-browser/model-experience/system-prompt/what-the-model-sees/public-browser-guidance:
+  en: 7bf9e03cf325d925
+  zh: 59c63964f8cb745a
+/deepseek-ai-dsh-tool-browser/model-experience/system-prompt/token-effect:
+  en: eb3d35a6ec1653c0
+  zh: 2c9b6411374ad7e0
+/deepseek-ai-dsh-tool-browser/model-experience/system-prompt/kv-cache-effect:
+  en: 394d6012f0affe92
+  zh: 6e30a09889805f42
+/deepseek-ai-dsh-tool-browser/model-experience/tool-schemas:
+  en: 3039bc5e7a796b21
+  zh: 6b7a9eaf69c9ea53
+/deepseek-ai-dsh-tool-browser/model-experience/tool-schemas/what-the-model-sees:
+  en: 9da6cf17f7468f97
+  zh: 60817542be4a451d
+/deepseek-ai-dsh-tool-browser/model-experience/tool-schemas/token-effect:
+  en: 1d8ee1637d307ab3
+  zh: 2204c432c67a6d83
+/deepseek-ai-dsh-tool-browser/model-experience/tool-schemas/kv-cache-effect:
+  en: 66d4944687a2c783
+  zh: 39ee2a64509238f8
+/deepseek-ai-dsh-tool-browser/known-limitations-and-deferred-work:
+  en: ccf4e3caeb370dac
+  zh: 22cec4f09ad59a03

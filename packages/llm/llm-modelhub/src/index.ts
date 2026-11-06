@@ -6,10 +6,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import {
+  DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  DEFAULT_MAX_REQUEST_IMAGES,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
   PiAiAdapter,
@@ -17,7 +20,6 @@ import {
   credentialStoreFrom,
 } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   assertServiceable,
   Config,
@@ -54,8 +56,6 @@ export const name = 'llm-modelhub'
 /** Required services. */
 export const inject = ['llm']
 
-const NS = settingsNamespace('llm-modelhub')
-
 type ModelHubProfile = ResolvedPiAiProviderProfile & {
   readonly apiKeyEnv: ResolvedModelHubConfig['apiKeyEnv']
 }
@@ -70,32 +70,27 @@ function resolvedProfile(config: Config): ModelHubProfile {
     apiKeyEnv: resolved.apiKeyEnv,
     streamIdleTimeoutMs: resolved.streamIdleTimeoutMs,
     maxRequestImageBytes: resolved.maxRequestImageBytes,
+    maxRequestImages: DEFAULT_MAX_REQUEST_IMAGES,
+    imageOffloadCountQuantum: DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
     requestImagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
     requestImageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     retryPolicy: resolved.retryPolicy,
     configuredMaxTokens: resolved.configuredMaxTokens,
+    modelErrors: new Map(),
     piProvider: buildProvider(resolved),
   }
 }
 
 /**
- * Register the ModelHub route and its settings section.
+ * Register the ModelHub route.
  * @param ctx - Cordis context carrying the LLM runtime.
  * @param config - composition-layer ModelHub configuration.
  */
 export function apply(ctx: Context, config: Config): void {
-  let readConfig: () => Config = () => config
-  let cache: {
-    source: Config
-    value: ReadonlyMap<string, ResolvedPiAiProviderProfile>
-  } | undefined
-  const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
-    const source = readConfig()
-    if (cache?.source === source) return cache.value
-    const value = new Map([[MODELHUB_PROVIDER, resolvedProfile(source)]])
-    cache = { source, value }
-    return value
-  }
+  assertServiceable(config)
+  const profile = resolvedProfile(config)
+  const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> =>
+    new Map([[MODELHUB_PROVIDER, profile]])
   profiles()
 
   const resolveApiKey = async (
@@ -134,23 +129,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerConfigurableProviders([{
     provider: MODELHUB_PROVIDER,
     displayName: MODELHUB_DISPLAY_NAME,
-    settingsNs: NS,
+    settingsNs: ctx.fiber.entry?.options.id ?? name,
     settingsPath: [],
   }])
-  const registration = ctx.llm.registerAdapter([MODELHUB_PROVIDER], adapter)
-  let registeredRetryPolicy: ResolvedModelHubConfig['retryPolicy'] = resolveConfig(config).retryPolicy
-  const ensureRegistrationFacts = (): void => {
-    const profile = profiles().get(MODELHUB_PROVIDER)
-    if (profile === undefined || deepEqualJson(profile.retryPolicy, registeredRetryPolicy)) return
-    registration.replace([MODELHUB_PROVIDER])
-    registeredRetryPolicy = profile.retryPolicy
-  }
-
-  installSettingsSection(ctx, NS, Config, config, {
-    validate: assertServiceable,
-    setSource: (source) => {
-      readConfig = source
-    },
-    onChange: ensureRegistrationFacts,
-  })
+  ctx.llm.registerAdapter([MODELHUB_PROVIDER], adapter)
 }

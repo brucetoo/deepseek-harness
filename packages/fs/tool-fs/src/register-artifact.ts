@@ -46,7 +46,7 @@ export function applyRegisterArtifactTool(ctx: Context): void {
     },
     async execute(args: RegisterArtifactArgs, exec) {
       if (args.path.trim() === '') throw new Error('path must be a non-empty string')
-      const target = await ctx.fs.resolve(args.path, sessionResolveOptions(exec, args.path))
+      const target = await ctx.fs.resolve(args.path, await sessionResolveOptions(ctx, exec))
       const info = await ctx.fs.stat(target, exec.signal)
       if (info === undefined) throw new Error(`cannot register "${args.path}": file not found`)
       if (info.type !== 'file') throw new Error(`cannot register "${args.path}": not a regular file`)

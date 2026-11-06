@@ -21,7 +21,6 @@ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm/brand'
 import type { CommandContribution, PopupSelectSpec, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
-import { ModelDirectory } from '../src/client/directory.ts'
 import { zh } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
@@ -206,70 +205,6 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
 
 const projection = (id: string) => ({ sessionId: sid(id) })
 
-describe('ModelDirectory ordering', () => {
-  it('ignores a stale load that settles after a newer selection', async () => {
-    let finishLoad!: (value: never) => void
-    const sessions = {
-      models: () => new Promise((resolve) => { finishLoad = resolve }),
-      selectModel: () => Promise.resolve({
-        result: {
-          ok: true as const,
-          value: { selected: { kind: 'auto' as const }, routable: true },
-        },
-      }),
-    }
-    const directory = new ModelDirectory(sessions as never, sid('s1'), () => true)
-    const loading = directory.load()
-    await directory.select({ kind: 'auto' })
-    finishLoad({
-      result: {
-        ok: true,
-        value: {
-          current: { kind: 'model', provider: 'old', model: 'old' },
-          lastRoute: { provider: 'old', model: 'old' },
-          routable: true,
-          groups: [],
-          failures: [],
-        },
-      },
-    } as never)
-    await loading
-    expect(directory.store.getSnapshot().current).toEqual({ kind: 'auto' })
-  })
-
-  it('ignores a stale selection that settles after a newer load', async () => {
-    let finishSelection!: (value: never) => void
-    const sessions = {
-      models: () => Promise.resolve({
-        result: {
-          ok: true as const,
-          value: {
-            current: { kind: 'model' as const, provider: 'new', model: 'new' },
-            lastRoute: { provider: 'new', model: 'new' },
-            routable: true,
-            groups: [],
-            failures: [],
-          },
-        },
-      }),
-      selectModel: () => new Promise((resolve) => { finishSelection = resolve }),
-    }
-    const directory = new ModelDirectory(sessions as never, sid('s1'), () => true)
-    const selecting = directory.select({ kind: 'auto' })
-    await directory.load()
-    finishSelection({
-      result: {
-        ok: true,
-        value: { selected: { kind: 'auto' }, routable: true },
-      },
-    } as never)
-    await selecting
-    expect(directory.store.getSnapshot().current).toEqual({
-      kind: 'model', provider: 'new', model: 'new',
-    })
-  })
-})
-
 describe('ui-model-selection dual entry', () => {
   it('carries writer contention to the model seat and localizes the command failure', async () => {
     const b = await bench()
@@ -305,13 +240,18 @@ describe('ui-model-selection dual entry', () => {
     b.mint('s1')
     const options = await b.popup().options(projection('s1'), new AbortController().signal)
     expect(options.map((o: SelectOption) => o.label)).toEqual([
+      locale === 'zh' ? '自动' : 'Auto',
       'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
     ])
-    expect(options.map(option => option.group?.label)).toEqual(['DeepSeek', 'DeepSeek', 'External Provider'])
-    expect(options.every(option => option.detail === undefined)).toBe(true)
+    expect(options.map(option => option.group?.label)).toEqual([
+      locale === 'zh' ? '自动' : 'Auto',
+      'DeepSeek', 'DeepSeek', 'External Provider',
+    ])
+    expect(options[0]?.detail).toBe(locale === 'zh' ? '为每次请求选择可用模型' : 'Choose an available model for each request')
+    expect(options.slice(1).every(option => option.detail === undefined)).toBe(true)
     expect(b.popup().searchMode).toBe('fuzzy-label')
-    expect(options[0]?.active).toBe(true)
-    expect(options[1]?.active).toBeUndefined()
+    expect(options[0]?.active).toBeUndefined()
+    expect(options[1]?.active).toBe(true)
     expect(b.popup().searchLabels?.()).toEqual(locale === 'zh'
       ? { placeholder: '搜索模型…', empty: '暂无可用模型', noResults: '没有匹配的模型。' }
       : { placeholder: 'Search models…', empty: 'No models available.', noResults: 'No matching models.' })
@@ -328,7 +268,7 @@ describe('ui-model-selection dual entry', () => {
       b.mint('s1')
       const options = await b.popup().options(projection('s1'), new AbortController().signal)
       expect([...new Set(options.map(option => option.group?.name))])
-        .toEqual(['deepseek-account', 'deepseek-official', 'external', 'last-provider'])
+        .toEqual(['auto', 'deepseek-account', 'deepseek-official', 'external', 'last-provider'])
     } finally {
       await b.ctx.fiber.dispose()
     }
@@ -345,13 +285,11 @@ describe('ui-model-selection dual entry', () => {
     expect(await settled).toEqual({ ok: true, value: undefined })
     expect(seatFace.directory.getSnapshot()).toMatchObject({ status: 'ready', pending: null })
     expect(b.hostCurrent()).toEqual({
-      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
     })
     expect(seatFace.directory.getSnapshot().current).toEqual({
-      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
@@ -369,7 +307,6 @@ describe('ui-model-selection dual entry', () => {
     const pro = options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')!
     await b.popup().onSelect(pro, projection('s1'))
     expect(seatFace.directory.getSnapshot().current).toEqual({
-      kind: 'model',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'high',
@@ -383,7 +320,7 @@ describe('ui-model-selection dual entry', () => {
       b.remote.emit('llm/adapters-updated', [])
       b.mint('s1')
       const options = await b.popup().options(projection('s1'), new AbortController().signal)
-      expect(options[0]?.group?.label).toBe(locale === 'zh' ? 'DeepSeek 账号' : 'DeepSeek Account')
+      expect(options[1]?.group?.label).toBe(locale === 'zh' ? 'DeepSeek 账号' : 'DeepSeek Account')
     } finally {
       await b.ctx.fiber.dispose()
     }
@@ -445,8 +382,8 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
-    await face.select({ kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-pro' })
-    b.setHostCurrent({ kind: 'auto' })
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    b.setHostCurrent({ provider: 'auto', model: 'auto' })
 
     b.ctx.emit('connection/reset')
     expect(face.directory.getSnapshot()).toMatchObject({
@@ -628,7 +565,6 @@ describe('ui-model-selection dual entry', () => {
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
       .rejects.toThrow(/unavailable for addressed subagent/)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).select({
-      kind: 'model',
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
     })).rejects.toThrow(/unavailable for addressed subagent/)

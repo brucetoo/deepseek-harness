@@ -4,13 +4,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import LlmRuntime, { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import * as ModelHub from '../src/index.ts'
 import { startModelHubServer } from './support.ts'
 import type { ModelHubServer } from './support.ts'
@@ -28,21 +27,14 @@ afterEach(async () => {
   root = undefined
 })
 
-async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }> {
+async function loadComposition(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-modelhub-composition-'))
   server = await startModelHubServer()
-  const settingsPath = join(root, 'settings.yaml')
-  await writeFile(settingsPath, '# personal settings\n')
   await writeFile(join(root, '.credentials.yaml'), 'MODELHUB_COMPOSITION_AK: key-from-store\n', { mode: 0o600 })
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     '- id: llm',
     "  name: 'test-llm-service'",
-    '- id: settings',
-    "  name: '@deepseek-ai/dsh-settings-file'",
-    '  config:',
-    `    path: ${JSON.stringify(settingsPath)}`,
-    '    debounceMs: 10',
     '- id: credentials',
     "  name: '@deepseek-ai/dsh-credentials-local'",
     '  config:',
@@ -65,7 +57,6 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['test-llm-service', LlmRuntime],
-    ['@deepseek-ai/dsh-settings-file', FileSettingsProvider],
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
     ['@deepseek-ai/dsh-llm-modelhub', ModelHub],
   ])
@@ -81,12 +72,12 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
     config: { path: pathToFileURL(configPath).href },
   })
   await ctx.loader.await()
-  return { ctx, settingsPath }
+  return ctx
 }
 
 describe('ModelHub real Loader composition', () => {
-  it('loads the route, applies settings live, and resolves the stored credential', async () => {
-    const { ctx, settingsPath } = await loadComposition()
+  it('loads the configured route and resolves the stored credential', async () => {
+    const ctx = await loadComposition()
     expect(ctx.llm.listProviders()).toEqual([{
       id: ModelHub.MODELHUB_PROVIDER,
       name: ModelHub.MODELHUB_DISPLAY_NAME,
@@ -94,20 +85,11 @@ describe('ModelHub real Loader composition', () => {
     await expect(ctx.llm.listModels(ModelHub.MODELHUB_PROVIDER)).resolves.toMatchObject([
       { id: 'loader-model', inputModalities: ['text'] },
     ])
-
-    await writeFile(settingsPath, [
-      'llm-modelhub:',
-      '  retryPolicy:',
-      '    mode: normal',
-      '    maxRetries: 2',
-      '',
-    ].join('\n'))
-    await vi.waitFor(() => {
-      expect(ctx.llm.providerRetryPolicy(ModelHub.MODELHUB_PROVIDER)).toMatchObject({
-        mode: 'normal',
-        maxRetries: 2,
-      })
-    }, { timeout: 5_000 })
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual(expect.objectContaining({
+      provider: ModelHub.MODELHUB_PROVIDER,
+      settingsNs: 'llm-modelhub',
+      settingsPath: [],
+    }))
 
     const assembler = new BlockAssembler()
     for await (const chunk of ctx.llm.stream({
@@ -116,7 +98,6 @@ describe('ModelHub real Loader composition', () => {
       messages: [],
     })) assembler.push(chunk)
     expect(assembler.message({
-      kind: 'model',
       provider: ModelHub.MODELHUB_PROVIDER,
       model: 'loader-model',
     }).content).toEqual([{ type: 'text', text: 'hello' }])

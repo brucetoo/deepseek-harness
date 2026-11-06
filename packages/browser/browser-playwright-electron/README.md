@@ -1,8 +1,23 @@
+---
+description: "Run the public browser service in an isolated Electron worker controlled through Playwright."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-playwright-electron
 
 English | [中文](README.zh.md)
 
-Desktop Service Provider for [`@deepseek-ai/dsh-browser`](../browser/README.md). It launches the packaged Electron executable in a dedicated worker mode, discovers its random loopback CDP endpoint from bounded startup output, and connects `playwright-core` to the worker's single page.
+## Summary
+
+Run the public browser service in an isolated visible Electron worker. Each open uses a private temporary profile, bounded startup protocol, and one Playwright-controlled page.
+
+## Table of Contents
+
+- Runtime
+- Config
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Runtime
 
@@ -24,6 +39,10 @@ Provider disposal, Agent disposal, cancellation, explicit close, worker exit, an
 | `processGraceMs` | `2000` | Worker termination grace |
 | `readinessMaxBytes` | `16384` | Startup and protocol line bound |
 | `snapshotDepth` | `8` | Maximum ARIA snapshot depth |
+
+## Dev Note
+
+None.
 
 ## Model Experience
 

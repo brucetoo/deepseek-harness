@@ -36,7 +36,7 @@ Electron session 只为精确的应用 HTTP 与 WebSocket origin 注入该标头
 
 真实打包 macOS 应用的冒烟测试从 `.app` 启动，等待 React 界面就绪，关闭首次运行通知，通过鼠标事件打开 Settings，捕获已渲染窗口，经 Electron 浏览器生命周期退出，校验退出码为零和 sidecar 进程数量，并使用同一桌面数据目录再次启动。原生 Windows CI 会验证可分发文件的校验和与 ZIP 展开结果、静默安装 NSIS 软件包、检查内置暂存版本的元数据、启动已安装的可执行文件直至 Electron CDP 中出现其 React 页面、关闭窗口、要求退出码为零，并拒绝仍有 sidecar 监听器的结果。
 
-[Windows 原生运行 35054280752](https://github.com/brucetoo/deepseek-harness/actions/runs/35054280752)检出了 `04ebede20f281d35e8f15006d701bb0fb6323f5c`，并通过 284 项聚焦测试、仓库构建、打包和安装后应用验证。独立复算的 SHA-256 摘要与 `SHA256SUMS` 一致：NSIS 安装程序为 `3c2f8dd824470f237e6c43b6c4425745258fa3489b6920a6bdf7bda02d32c068`，ZIP 为 `ef59c30a5d4409013f7e3da2096bce2af332193c9f390285c278486b0a4ca806`。ZIP 记录了该确切 commit、用于 `win32-x64` 的 Node `v24.20.0`，并包含四个内置工作流 skill。
+[Windows 原生运行 35054280752](https://github.com/brucetoo/deepseek-harness/actions/runs/35054280752)通过 284 项聚焦测试、仓库构建、打包和安装后应用验证。独立复算的 SHA-256 摘要与 `SHA256SUMS` 一致：NSIS 安装程序为 `3c2f8dd824470f237e6c43b6c4425745258fa3489b6920a6bdf7bda02d32c068`，ZIP 为 `ef59c30a5d4409013f7e3da2096bce2af332193c9f390285c278486b0a4ca806`。ZIP 记录了源代码版本、用于 `win32-x64` 的 Node `v24.20.0`，并包含四个内置工作流 skill。
 
 ## Alternatives considered
 
@@ -58,4 +58,4 @@ Electron session 只为精确的应用 HTTP 与 WebSocket origin 注入该标头
 
 包含本地 bundle 的构建有意作为机器特定的开发产物。其 tarball 与摘要使选定字节可供检查，但它们不属于仓库 lockfile，后续重新构建时必须再次提供。安装阶段会禁用生命周期脚本，因此本地包必须随包提供已构建的运行时文件；捕获受信任的本地源码目录时，其 pack 生命周期仍可运行。
 
-macOS 产物未签名，也未经过 notarization（公证）；Windows 安装程序与可执行文件同样未签名。打包流程会在校验平台、架构和版本后复制原生构建宿主的 Node 可执行文件。签名分发需要开发产物之外的平台凭据与发布来源证明。更新、托盘行为、最后一个窗口关闭后的后台执行、编辑现有 Office 文档、演示文稿生成和云执行仍是独立产品能力，应通过插件实现，而不是写入 Electron 主进程逻辑。打包后的插件组合已经提供新建 DOCX 与 XLSX、生成带引用的网页调研成果，以及经过审批后操作无需凭据的公共页面。
+macOS 产物未签名，也未经过 notarization（公证）；Windows 安装程序与可执行文件同样未签名。打包流程会在校验平台、架构和版本后复制原生构建宿主的 Node 可执行文件。签名分发需要开发产物之外的平台凭据与发布证据。更新、托盘行为、最后一个窗口关闭后的后台执行、编辑现有 Office 文档、演示文稿生成和云执行仍是独立产品能力，应通过插件实现，而不是写入 Electron 主进程逻辑。打包后的插件组合已经提供新建 DOCX 与 XLSX、生成带引用的网页调研成果，以及经过审批后操作无需凭据的公共页面。

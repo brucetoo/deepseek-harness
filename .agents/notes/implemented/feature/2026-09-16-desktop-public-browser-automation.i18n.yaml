@@ -1,6 +1,31 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-16-desktop-public-browser-automation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-desktop-public-browser-automation.md
-2026-09-16-desktop-public-browser-automation.md: 9cfc36ea932f1b3bdcfdc88725fd57f0ad7740c3
-2026-09-16-desktop-public-browser-automation.zh.md: dd176ab4308d17208948b0b4bac949b67c5dd766
+/agent-note-desktop-public-web-browser-automation:
+  en: f746deab3917058c
+  zh: 274090a9f1d0eaf7
+/agent-note-desktop-public-web-browser-automation/problem:
+  en: c26e03791cfb8961
+  zh: 26fb9ca4fa9f5528
+/agent-note-desktop-public-web-browser-automation/decision:
+  en: a2da4715d73ca0f3
+  zh: bfbf7d136fa0706b
+/agent-note-desktop-public-web-browser-automation/execution-model:
+  en: f3c3d25e9b4f0584
+  zh: 6fc08761ccb57feb
+/agent-note-desktop-public-web-browser-automation/authorization-and-target-identity:
+  en: f562ce7071e19fc9
+  zh: a99c53c2ec24fde6
+/agent-note-desktop-public-web-browser-automation/navigation-and-lifecycle:
+  en: b4e1af1c7c138ac7
+  zh: a89092eed81b38cc
+/agent-note-desktop-public-web-browser-automation/verification:
+  en: 02621ed96fca5715
+  zh: 425dcb4f7a2291a5
+/agent-note-desktop-public-web-browser-automation/alternatives-considered:
+  en: 64e484b67fd88acc
+  zh: da4bd69f172bf1fb
+/agent-note-desktop-public-web-browser-automation/consequences:
+  en: 23dc87663ecf6905
+  zh: 1f94af90f6a06119

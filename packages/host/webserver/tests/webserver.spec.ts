@@ -63,6 +63,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 // even when an assertion fails, so a test may boot more than one.
 let compositions: { context: Context; root: string }[] = []
 let tlsRoot: string | undefined
+const AUTH_ENV = 'DSH_WEBSERVER_TEST_TOKEN'
 
 afterEach(async () => {
   const loaded = compositions
@@ -73,6 +74,7 @@ afterEach(async () => {
   }))
   if (tlsRoot !== undefined) await rm(tlsRoot, { recursive: true, force: true })
   tlsRoot = undefined
+  delete process.env.DSH_WEBSERVER_TEST_TOKEN
 })
 
 /** Materialize the generated TLS fixture into a temp root this file cleans up. */
@@ -86,12 +88,14 @@ async function tlsFixture(): Promise<TlsFixture> {
  * @param tls - a TLS row (partial rows model a user's incomplete YAML), `null`
  * for an explicit empty `tls:` (what a user's `tls:` with no value parses to),
  * or undefined to omit the field entirely.
+ * @param bearerTokenEnv - environment variable containing the bearer token.
  */
 async function loadComposition(
   port = 0,
   gzip = false,
   host = '127.0.0.1',
   tls?: Partial<TlsConfig> | null,
+  bearerTokenEnv?: string,
 ): Promise<Context> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-webserver-loader-'))
   const configPath = join(root, 'cordis.yml')
@@ -100,6 +104,7 @@ async function loadComposition(
     '  config:',
     `    host: '${host}'`,
     `    port: ${String(port)}`,
+    ...(bearerTokenEnv === undefined ? [] : [`    bearerTokenEnv: '${bearerTokenEnv}'`]),
     ...(tls === undefined
       ? []
       : tls === null
@@ -179,6 +184,24 @@ async function request(
 ): Promise<{ status: number; body: string; headers: Headers }> {
   const response = await fetch(`http://127.0.0.1:${String(boundPort(port))}${path}`, init)
   return { status: response.status, body: (await response.text()).slice(0, 80), headers: response.headers }
+}
+
+/** Send one raw upgrade request and return the complete response. */
+function upgradeResponse(
+  listenerPort: number | undefined,
+  path: string,
+  authorization?: string,
+): Promise<string> {
+  const port = boundPort(listenerPort)
+  return rawExchange(port, [
+    `GET ${path} HTTP/1.1`,
+    `Host: 127.0.0.1:${String(port)}`,
+    'Connection: Upgrade',
+    'Upgrade: dsh-test',
+    ...(authorization === undefined ? [] : [`Authorization: ${authorization}`]),
+    '',
+    '',
+  ].join('\r\n'))
 }
 
 /** Open one raw upgrade request and return after the handler writes its response. */
@@ -1073,7 +1096,7 @@ describe('real Loader composition', () => {
   it('authenticates every HTTP and upgrade route before dispatch', { timeout: 60_000 }, async () => {
     const token = 'fixture-token-that-must-not-be-logged'
     process.env[AUTH_ENV] = token
-    const loaded = await loadComposition(0, AUTH_ENV)
+    const loaded = await loadComposition(0, false, '127.0.0.1', undefined, AUTH_ENV)
     const server = loaded.webServer
     const port = server.port
     const calls: string[] = []
@@ -1109,16 +1132,15 @@ describe('real Loader composition', () => {
     })
 
     for (const path of ['/exact', '/prefix/leaf', '/fallback']) {
-      expect(await request(port, path)).toMatchObject({
-        status: 401,
-        authenticate: 'Bearer',
-      })
-      expect(await request(port, path, {
-        headers: { authorization: 'Bearer wrong-token' },
-      })).toMatchObject({ status: 401, authenticate: 'Bearer' })
-      expect(await request(port, path, {
-        headers: { authorization: `Basic ${token}` },
-      })).toMatchObject({ status: 401, authenticate: 'Bearer' })
+      for (const init of [
+        undefined,
+        { headers: { authorization: 'Bearer wrong-token' } },
+        { headers: { authorization: `Basic ${token}` } },
+      ]) {
+        const response = await request(port, path, init)
+        expect(response.status).toBe(401)
+        expect(response.headers.get('www-authenticate')).toBe('Bearer')
+      }
     }
     expect(calls).toEqual([])
 
@@ -1140,26 +1162,20 @@ describe('real Loader composition', () => {
   })
 
   it('fails activation when the configured bearer environment variable is absent', { timeout: 60_000 }, async () => {
-    let failure: unknown
-    try {
-      await loadComposition(0, AUTH_ENV)
-    } catch (error) {
-      failure = error
-    }
-    expect(String(failure))
-      .toContain(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
+    const denied = await loadComposition(0, false, '127.0.0.1', undefined, AUTH_ENV)
+    const fiber = webserverFiber(denied)
+    expect(fiber?.state).toBe(FiberState.FAILED)
+    await expect(fiber?.await())
+      .rejects.toThrow(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
   })
 
   it('fails activation when the configured bearer environment variable is empty', { timeout: 60_000 }, async () => {
     process.env[AUTH_ENV] = ''
-    let failure: unknown
-    try {
-      await loadComposition(0, AUTH_ENV)
-    } catch (error) {
-      failure = error
-    }
-    expect(String(failure))
-      .toContain(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
+    const denied = await loadComposition(0, false, '127.0.0.1', undefined, AUTH_ENV)
+    const fiber = webserverFiber(denied)
+    expect(fiber?.state).toBe(FiberState.FAILED)
+    await expect(fiber?.await())
+      .rejects.toThrow(`bearer token environment variable "${AUTH_ENV}" is missing or empty`)
   })
 
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {

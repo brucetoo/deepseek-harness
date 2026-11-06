@@ -515,15 +515,9 @@ Owns the default model selection independently of any Host or transport. Each op
 ```ts cordis-catalog
 /**
  * Read the current default model selection.
- * @returns a detached logical model-selection intent.
+ * @returns a detached provider, model, and optional reasoning selection.
  */
-currentSelection(): ModelSelectionIntent
-
-/**
- * Read the deployment's concrete Agent creation fallback.
- * @returns a detached concrete composition selection.
- */
-compositionSelection(): ModelSelectionIntent & { kind: 'model' }
+currentSelection(): ModelSelection
 
 /**
  * Save the complete default model selection. A deployment without a configuration
@@ -532,7 +526,7 @@ compositionSelection(): ModelSelectionIntent & { kind: 'model' }
  * @param next - resolved selection accepted by an entry point.
  * @returns fulfillment after the optional profile write settles.
  */
-async saveSelection(next: ModelSelectionIntent): Promise<void>
+async saveSelection(next: ModelSelection): Promise<void>
 ```
 
 Source: [`packages/core/agent-default-model/src/index.ts`](../../packages/core/agent-default-model/src/index.ts)
@@ -848,6 +842,26 @@ Types: [Session](session.md)
 
 Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index.ts)
 
+<a id="ctxinvariants--invariantregistry"></a>
+
+### `ctx.invariants` — `InvariantRegistry`
+
+Package-owned invariant registry with global and regex-based selection.
+
+```ts cordis-catalog
+/**
+ * Register one package's invariant installer. The package name is reserved
+ * even when filtering disables its checks. Enabled installers run in a child
+ * fiber; failure disposes that fiber and releases the reservation.
+ * @param packageName - full npm package name that owns the contribution.
+ * @param installer - listener or startup-check installer for the child context.
+ * @returns an effect-scoped disposer for the registration.
+ */
+register(packageName: string, installer: InvariantInstaller): () => void
+```
+
+Source: [`packages/runtime-diagnostics/invariants/src/index.ts`](../../packages/runtime-diagnostics/invariants/src/index.ts)
+
 <a id="agent-events"></a>
 
 ### `agent/*` events
@@ -1066,6 +1080,37 @@ Handle one failed model-request attempt before the loop retries or closes its st
 ```
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentresolve-model--waterfall"></a>
+
+#### `agent/resolve-model` — waterfall
+
+Resolve a recorded or configured model selection to the concrete route used for one step preparation or request attempt. Listeners call `next()` to preserve or wrap the current proposal. The loop invokes this before tool and system-prompt assembly, then again before each request attempt so recovery may replace a failed physical route. The returned selection affects the request header but does not replace the Agent's durable selection.
+
+```ts cordis-catalog
+/**
+ * Resolve a recorded or configured model selection to the concrete route
+ * used for one step preparation or request attempt. Listeners call
+ * `next()` to preserve or wrap the current proposal. The loop invokes this
+ * before tool and system-prompt assembly, then again before each request
+ * attempt so recovery may replace a failed physical route. The returned
+ * selection affects the request header but does not replace the Agent's
+ * durable selection.
+ * @param payload.agent - the agent making the model call.
+ * @param payload.selection - requested selection captured for the step.
+ * @param payload.phase - preparation previews a route before assembly; attempt commits one for dispatch.
+ * @param payload.turn - the open turn number.
+ * @param payload.step - the step whose route is being resolved.
+ * @param payload.signal - the current turn's cancellation signal.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @mode waterfall
+ */
+'agent/resolve-model'(this: Scoped<Agent>, payload: { agent: Agent; selection: Readonly<ModelSelection>; phase: 'preparation' | 'attempt'; turn: number; step: number; signal: AbortSignal }, next: () => Promise<ModelSelection>): Promise<ModelSelection>
+```
+
+Types: [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

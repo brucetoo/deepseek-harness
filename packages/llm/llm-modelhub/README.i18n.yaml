@@ -1,6 +1,58 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/llm/llm-modelhub/README.md
-README.md: 99cf7b52b529cba8caa3c1cc5d8f19cf765fcd3e
-README.zh.md: ed215c956f6391e48315233550bd414cded1e3f4
+/:
+  en: 6dc4c1ef5e2037d4
+  zh: 9dfdbe7e40cb427a
+/deepseek-ai-dsh-llm-modelhub:
+  en: 5df192661881f95d
+  zh: e8977c4ca262d900
+/deepseek-ai-dsh-llm-modelhub/summary:
+  en: 3ab1ba019afabf65
+  zh: ff01a0f4af5ae50c
+/deepseek-ai-dsh-llm-modelhub/table-of-contents:
+  en: e603fd019ce98cc4
+  zh: 799a6fbbce1bb2da
+/deepseek-ai-dsh-llm-modelhub/installation:
+  en: 07636ff3aa4c1748
+  zh: ee41de2c5c30fdee
+/deepseek-ai-dsh-llm-modelhub/configuration:
+  en: 7ad5385a0ac2d8a3
+  zh: 6649705257d2164a
+/deepseek-ai-dsh-llm-modelhub/request-behavior:
+  en: 243f5b49c740865d
+  zh: d463a050dc7a5f66
+/deepseek-ai-dsh-llm-modelhub/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269
+/deepseek-ai-dsh-llm-modelhub/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-request:
+  en: fc60beb63a14f6a7
+  zh: f7808be4dbdfed15
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-request/what-the-model-sees:
+  en: f4789d7dd5209c50
+  zh: 58467e2a38541415
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-request/token-effect:
+  en: 346e5e2e4b8546db
+  zh: 0e3c44d9f4c8aac7
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-request/kv-cache-effect:
+  en: 603f9212fdc949bd
+  zh: 742e0cdca1ca7e7d
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-response:
+  en: e3a7bac22204f9a2
+  zh: 5d0490bb1442d96b
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-response/what-the-model-sees:
+  en: 5ff46d505aea2422
+  zh: 06a05e829c155a78
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-response/token-effect:
+  en: fa121f7c9ad3e291
+  zh: b4886ab9a24a3855
+/deepseek-ai-dsh-llm-modelhub/model-experience/modelhub-response/kv-cache-effect:
+  en: 9730d4c81cdad7a1
+  zh: 829c0e23f2336bf4
+/deepseek-ai-dsh-llm-modelhub/known-limitations-and-deferred-work:
+  en: 3117eb921d016f75
+  zh: 0bbed333ab26c170

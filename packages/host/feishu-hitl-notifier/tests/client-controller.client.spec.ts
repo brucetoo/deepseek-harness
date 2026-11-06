@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { FeishuSettingsController, type NotifierConfiguration } from '../src/client/controller.ts'
 
 const saved: NotifierConfiguration = {
@@ -11,25 +11,29 @@ const saved: NotifierConfiguration = {
 }
 
 function setup() {
-  const bound = stubSettingsScope<{ configuration: NotifierConfiguration }>()
-  const mutate = vi.fn()
-  const acceptView = vi.fn()
+  const bound = stubConfigForm<{ configuration: NotifierConfiguration }>()
+  const mutate = bound.mutate
   const testRecipient = vi.fn()
-  const controller = new FeishuSettingsController(bound.scope, { settings: { mutate } } as never, { acceptView }, testRecipient)
+  const controller = new FeishuSettingsController(bound.scope, testRecipient)
   bound.publish({ status: 'ready', writable: true, revision: 7, value: { configuration: saved } })
-  return { bound, mutate, acceptView, testRecipient, controller }
+  return { bound, mutate, testRecipient, controller }
 }
 
 describe('FeishuSettingsController', () => {
   it('captures the first-edit revision and saves configuration with exactly one set op', async () => {
-    const { controller, mutate, acceptView } = setup()
+    const { controller, mutate, bound } = setup()
     controller.editWebBaseUrl('https://dsh.example')
-    mutate.mockResolvedValue({ result: { ok: true, value: { ns: 'feishu-hitl-notifier', revision: 8, value: { configuration: { ...saved, webBaseUrl: 'https://dsh.example' } } } } })
+    mutate.mockImplementation(() => {
+      bound.publish({ revision: 8, value: { configuration: { ...saved, webBaseUrl: 'https://dsh.example' } } })
+      return Promise.resolve(true)
+    })
 
     await controller.save()
 
-    expect(mutate).toHaveBeenCalledWith({ ns: 'feishu-hitl-notifier', expectedRevision: 7, ops: [{ op: 'set', path: ['configuration'], value: { ...saved, webBaseUrl: 'https://dsh.example' } }] })
-    expect(acceptView).toHaveBeenCalledOnce()
+    expect(mutate).toHaveBeenCalledWith(
+      [{ op: 'set', path: ['configuration'], value: { ...saved, webBaseUrl: 'https://dsh.example' } }],
+      7,
+    )
     expect(controller.store.getSnapshot().dirty).toBe(false)
   })
 
@@ -43,13 +47,12 @@ describe('FeishuSettingsController', () => {
   })
 
   it.each([
-    [{ result: { ok: false, error: { code: 'settings-conflict', message: '<b>conflict</b>' } } }, 'conflict'],
+    [new Error('<b>conflict</b>'), 'conflict'],
     [new Error('<script>transport</script>'), 'transport'],
   ])('preserves the draft and sanitizes a failed save', async (outcome, expected) => {
     const { controller, mutate } = setup()
     controller.editWebBaseUrl('https://draft.example')
-    if (outcome instanceof Error) mutate.mockRejectedValue(outcome)
-    else mutate.mockResolvedValue(outcome)
+    mutate.mockRejectedValue(outcome)
     await controller.save()
     expect(controller.store.getSnapshot()).toMatchObject({ dirty: true })
     expect(controller.store.getSnapshot().error).toContain(expected)

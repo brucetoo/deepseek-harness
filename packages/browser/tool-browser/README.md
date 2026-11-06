@@ -1,8 +1,23 @@
+---
+description: "Give models approval-aware tools for visible interaction with credential-free public web pages."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-browser
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Model-facing Consumer for the [`ctx.browser`](../browser/README.md) capability. It registers seven tools, owns one-shot approval text, bounds complete UTF-8 observations, contributes public-only operating guidance, and never imports a concrete browser Provider.
+
+## Table of Contents
+
+- Tools
+- Config
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Tools
 
@@ -25,6 +40,10 @@ Only the exact `allowed-once` approval outcome executes `browser_open`, `browser
 | `maxOutputBytes` | `64000` | Complete UTF-8 observation limit |
 | `timeoutMs` | `30000` | Cooperative tool-call budget |
 | `maxWaitMs` | `10000` | Maximum accepted `browser_wait` duration |
+
+## Dev Note
+
+None.
 
 ## Model Experience
 

@@ -69,6 +69,7 @@ type PreparedStep =
     messages: UserMessage[]
     startsRequestSeries?: true
     assembly: PromptAssembly
+    requestedSelection: Readonly<ModelSelection>
     selection: Readonly<ModelSelection>
     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
     toolSet: ResolvedToolSet
@@ -285,10 +286,11 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
     const claimed = this.inbox.claim(target, position.turn)
-    const selection = this.model.current()
-    if (selection === undefined) {
+    const requestedSelection = this.model.current()
+    if (requestedSelection === undefined) {
       throw new Error(`agent "${this.id}" has no provider/model: set AgentOptions.provider and AgentOptions.model or record a model selection`)
     }
+    const selection = await this.resolveModel(requestedSelection, 'preparation', position, signal)
     const toolSet = await this.loopCtx.tools.resolve({ agent: this, modelSelection: selection, signal })
     try {
       const assembly = await this.loopCtx.systemPrompt.assemble({ ...assembleContextFor(this, signal), modelSelection: selection, toolSet })
@@ -309,7 +311,7 @@ export class ReactLoopAgent implements Agent {
         toolSet.dispose()
         return decision
       }
-      return { ...decision, assembly, selection, toolSet }
+      return { ...decision, assembly, requestedSelection, selection, toolSet }
     } catch (error: unknown) {
       toolSet.dispose()
       throw error
@@ -442,9 +444,14 @@ export class ReactLoopAgent implements Agent {
     const renderedPrompt = renderPrompt(assembly)
     let firstAttempt = true
     while (true) {
-      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal)
+      const { config, preparedCall, selection } = await this.prepareRequest(
+        turn,
+        step,
+        decision.requestedSelection,
+        signal,
+      )
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
-        ...assembleContextFor(this, signal), modelSelection: decision.selection,
+        ...assembleContextFor(this, signal), modelSelection: selection,
       })
       const sections = renderContextSections(currentContext)
       const context = this.runtimeContext.project(joinContextSections(sections), sections)
@@ -615,8 +622,9 @@ export class ReactLoopAgent implements Agent {
     step: number,
     selection: Readonly<ModelSelection>,
     signal: AbortSignal,
-  ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
+  ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall; selection: Readonly<ModelSelection> }> {
     const { session } = this
+    const resolvedSelection = await this.resolveModel(selection, 'attempt', { turn, step }, signal)
 
     // A loop instance seeds output controls from its options until it logs its
     // own header; later steps re-resolve marked defaults.
@@ -626,17 +634,17 @@ export class ReactLoopAgent implements Agent {
       ? requestProposal(session.requestHeader()!)
       : maxTokens === undefined ? {} : { maxTokens }
     const { provider: _provider, model: _model, reasoningEffort: _effort, ...controls } = persisted
-    const seedConfig = deepFreeze(structuredClone({ ...controls, ...selection }))
+    const seedConfig = deepFreeze(structuredClone({ ...controls, ...resolvedSelection }))
     const proposedConfig = await this.dispatch.waterfall(
       'agent/request', { turn, step, signal },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()
-    if (proposedConfig.provider !== selection.provider || proposedConfig.model !== selection.model) {
-      throw new Error(`agent "${this.id}": agent/request proposed "${proposedConfig.provider}/${proposedConfig.model}" after step preparation fixed "${selection.provider}/${selection.model}"; use agent.model.select() before step preparation`)
+    if (proposedConfig.provider !== resolvedSelection.provider || proposedConfig.model !== resolvedSelection.model) {
+      throw new Error(`agent "${this.id}": agent/request proposed "${proposedConfig.provider}/${proposedConfig.model}" after step preparation fixed "${resolvedSelection.provider}/${resolvedSelection.model}"; use agent.model.select() before step preparation`)
     }
-    if (proposedConfig.reasoningEffort !== selection.reasoningEffort) {
-      throw new Error(`agent "${this.id}": agent/request proposed reasoning effort "${proposedConfig.reasoningEffort ?? 'adapter default'}" after step preparation fixed "${selection.reasoningEffort ?? 'adapter default'}"; use agent.model.select() before step preparation`)
+    if (proposedConfig.reasoningEffort !== resolvedSelection.reasoningEffort) {
+      throw new Error(`agent "${this.id}": agent/request proposed reasoning effort "${proposedConfig.reasoningEffort ?? 'adapter default'}" after step preparation fixed "${resolvedSelection.reasoningEffort ?? 'adapter default'}"; use agent.model.select() before step preparation`)
     }
     let config: LlmCallConfig
     let preparedCall: PreparedLlmCall | undefined
@@ -649,7 +657,30 @@ export class ReactLoopAgent implements Agent {
       config = proposedConfig
     }
     signal.throwIfAborted()
-    return { config, ...preparedCall === undefined ? {} : { preparedCall } }
+    return {
+      config,
+      ...preparedCall === undefined ? {} : { preparedCall },
+      selection: resolvedSelection,
+    }
+  }
+
+  /** Resolve one requested selection for preparation or an individual retry attempt. */
+  private async resolveModel(
+    selection: Readonly<ModelSelection>,
+    phase: 'preparation' | 'attempt',
+    position: { turn: number; step: number },
+    signal: AbortSignal,
+  ): Promise<Readonly<ModelSelection>> {
+    const resolved = await this.dispatch.waterfall(
+      'agent/resolve-model',
+      { selection, phase, ...position, signal },
+      () => Promise.resolve<ModelSelection>({ ...selection }),
+    )
+    signal.throwIfAborted()
+    if (resolved.provider.length === 0 || resolved.model.length === 0) {
+      throw new Error(`agent "${this.id}": model resolver returned an empty provider or model`)
+    }
+    return deepFreeze(structuredClone(resolved))
   }
 
   /** Log the resolved envelope and derive a frozen request from the admitted surface. */

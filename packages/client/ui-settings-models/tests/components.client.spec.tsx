@@ -378,7 +378,7 @@ async function mountModelHubCard(overrides: Parameters<typeof scriptedFace>[0] =
   const scripted = scriptedFace(overrides)
   const namespace: SettingsNamespaceView = {
     ns: 'llm-modelhub',
-    schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as unknown,
+    schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as JsonValue,
     value: {
       endpoint: 'https://modelhub.example/api/crawl',
       apiKeyEnv: 'AIDP_MODELHUB_AK',
@@ -394,6 +394,7 @@ async function mountModelHubCard(overrides: Parameters<typeof scriptedFace>[0] =
       models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', input: ['text'] }],
     },
     user: {},
+    autoGenerate: true,
     applies: 'live',
     secrets: [],
     revision: 0,
@@ -405,7 +406,8 @@ async function mountModelHubCard(overrides: Parameters<typeof scriptedFace>[0] =
     namespace={namespace}
     schema={settingsSchema}
     settingsPath={[]}
-    api={scripted.face as never}
+    operations={operationsWith(scripted.face)}
+    defaultBaseURL={(namespace.base as { endpoint: string }).endpoint}
     t={t}
     readOnly={false}
     onClose={() => {}}
@@ -986,9 +988,9 @@ describe('ModelsSection', () => {
       defaultMaxTokens: 32_768,
       models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', input: ['text'] }],
     }
-    const mutate = vi.fn((_request: unknown) => Promise.resolve(ok({
+    const mutate = vi.fn((_request: unknown) => Promise.resolve(remoteOk({
       ns: 'llm-modelhub',
-      schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as unknown,
+      schema: JSON.parse(JSON.stringify(ModelHubConfig.toJSON())) as JsonValue,
       value: modelHub,
       base: modelHub,
       user: {},
@@ -996,7 +998,7 @@ describe('ModelsSection', () => {
       secrets: [],
       revision: 1,
     })))
-    const set = vi.fn(() => Promise.resolve(ok({})))
+    const set = vi.fn(() => Promise.resolve(remoteOk({})))
     await mountModelHubCard({ mutate, set })
 
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
@@ -1012,9 +1014,9 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
-    expect(mutate.mock.calls[0]?.[0]).toEqual({
-      ns: 'llm-modelhub',
-      ops: [
+    expect(mutate.mock.calls[0]).toEqual([
+      'llm-modelhub',
+      [
         { op: 'set', path: ['endpoint'], value: 'https://next.modelhub.example/exact' },
         {
           op: 'set',
@@ -1022,9 +1024,9 @@ describe('ModelsSection', () => {
           value: [{ id: 'gpt-5.6-sol', name: 'ModelHub Sol', input: ['text'] }],
         },
       ],
-      expectedRevision: 0,
-    })
-    expect(set).toHaveBeenCalledWith({ ref: 'AIDP_MODELHUB_AK', value: 'replacement-key' })
+      0,
+    ])
+    expect(set).toHaveBeenCalledWith('AIDP_MODELHUB_AK', 'replacement-key')
   })
 
   it('materializes inherited models and adds an arbitrary DeepSeek id', async () => {

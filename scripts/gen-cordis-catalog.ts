@@ -154,6 +154,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   web: 'web.md',
   workflowEngine: 'workflow.md',
   webhookRuntime: 'webhook.md',
+  feishuHitlNotifier: 'user-questions.md',
+  invariants: 'core.md',
   workspaceRegistry: 'workspace.md',
   workspaceController: 'workspace.md',
   workspaceFiles: 'workspace.md',
@@ -223,6 +225,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sidebarRight: 'client-side right-Sidebar navigation face — packages/client/ui-sidebar-right/README.md owns the API',
   sidebarRightTabs: 'client-side right-Sidebar tab-type registry — packages/client/ui-sidebar-right/README.md owns the API',
   documentPreviews: 'client-side document renderer registry — docs/subsystems/sidebar-right.md owns the API',
+  llmAutoRouter: 'interface-typed routing policy service — packages/llm/llm-auto-router/README.md owns the API',
 }
 
 /**
@@ -266,6 +269,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'session-telemetry': 'session-telemetry.md',
   'feedback': 'feedback.md',
   'tools': 'tools.md',
+  'user-question': 'user-questions.md',
   'user-questions': 'user-questions.md',
   'web': 'web.md',
   'webserver': 'web-server.md',
@@ -994,6 +998,9 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  Recipient: 'Feishu destination identity is owned by packages/host/feishu-hitl-notifier/README.md',
+  RecipientTestResult: 'Feishu delivery-test outcomes are owned by packages/host/feishu-hitl-notifier/README.md',
+  InvariantInstaller: 'runtime invariant registration is owned by packages/runtime-diagnostics/invariants/README.md',
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
   ActionCardResult: 'packages/experimental/action-cards/README.md',

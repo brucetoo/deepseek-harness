@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { Attempts } from '../src/attempts.ts'
 import { RouteKey } from '../src/brand.ts'
 import { AutoModelRouter } from '../src/policy.ts'
@@ -46,7 +46,7 @@ describe('observeAttemptStream', () => {
 
   it.each([
     [{ type: 'reasoning-delta', index: 0, text: 'r' }],
-    [{ type: 'tool-call-delta', index: 0, id: CallId('c'), argumentsDelta: '' }],
+    [{ type: 'tool-call-delta', index: 0, id: ToolCallId('c'), argumentsDelta: '' }],
     [{ type: 'block-end', index: 0, block: { type: 'text', text: '' } }],
   ] satisfies readonly [StreamChunk][])('marks commitment for %o', async (committing) => {
     const { router, attempt, now } = fixture()

@@ -33,9 +33,6 @@
       "path": "../../llm/llm-pi-ai"
     },
     {
-      "path": "../../settings/settings"
-    },
-    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

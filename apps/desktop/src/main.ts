@@ -71,6 +71,7 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { isBrowserWorkerProcess, runBrowserWorker } from './browser-worker.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => { await stopOperationReports() }
@@ -774,7 +775,6 @@ async function main(): Promise<void> {
     // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
     // flow keeps its own taskbar and Dock attention instead.
     if (!isMandatory()) await windowShown()
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
     if (quitting) return state
     return updates.install(version, revision)
   }
@@ -1572,19 +1572,25 @@ async function main(): Promise<void> {
   publishUpdate(updateState)
 }
 
-const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
-
-if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error)
-  console.error(error)
-  const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
-  if (diagnosticFile !== undefined) {
-    await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
-  }
-  reportFatal(error, 'main')
-}).catch(async (error: unknown) => {
-  console.error(error)
-  shuttingDown = true
-  await stopOperationReports()
-  app.exit(1)
-})
+if (isBrowserWorkerProcess(process.argv)) {
+  void runBrowserWorker({ app, BrowserWindow }).catch((error: unknown) => {
+    console.error(error)
+    app.exit(1)
+  })
+} else {
+  const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+  if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(error)
+    const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
+    if (diagnosticFile !== undefined) {
+      await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
+    }
+    reportFatal(error, 'main')
+  }).catch(async (error: unknown) => {
+    console.error(error)
+    shuttingDown = true
+    await stopOperationReports()
+    app.exit(1)
+  })
+}

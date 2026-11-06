@@ -1,8 +1,24 @@
+---
+description: "Add ByteDance ModelHub as an installable LLM provider with exact endpoint and model-catalog settings."
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-llm-modelhub
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Optional ByteDance ModelHub provider for the Harness LLM seam. The package is both a Cordis plugin and an installable bundle: its plugin registers the fixed `bytedance-modelhub` route on `ctx.llm`, while [`cordis.patch.yml`](cordis.patch.yml) supplies the internal endpoint and shipped model catalog. `dsh-base` does not mount this route.
+
+## Table of Contents
+
+- Installation
+- Configuration
+- Request behavior
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Installation
 
@@ -43,6 +59,10 @@ The plugin owns the `llm-modelhub` settings namespace and declares its route in 
 ## Request behavior
 
 Each request resolves the credential, adds it as the `ak` query parameter, suppresses the ordinary Bearer header, and adds a fresh UUID in `X-TT-LOGID`. The request uses pi-ai's OpenAI Chat Completions serialization with ModelHub compatibility fixed to `supportsStore: false`, `supportsDeveloperRole: false`, and `maxTokensField: max_tokens`. Provider error text is scrubbed for raw and URL-encoded forms of the credential before it can reach a session log.
+
+## Dev Note
+
+None.
 
 ## Model Experience
 

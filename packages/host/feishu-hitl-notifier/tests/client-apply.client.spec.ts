@@ -1,7 +1,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-slots'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '../src/client/index.ts'
 import type { FeishuCardFace, NotifierConfiguration } from '../src/client/controller.ts'
 
@@ -13,9 +13,9 @@ const configuration: NotifierConfiguration = {
   recipients: [{ type: 'email', id: 'operator@example.com' }],
 }
 
-function bench() {
+async function bench() {
   const ctx = new Context()
-  const scope = stubSettingsScope()
+  const scope = stubConfigForm<{ configuration: NotifierConfiguration }>()
   const mountDispose = vi.fn()
   const testRecipient = vi.fn(() => Promise.resolve({ ok: true, value: { status: 'sent' } }))
   const mount = vi.fn(() => {
@@ -27,10 +27,13 @@ function bench() {
     constructor() { super(ctx, 'remote') }
     $mount = mount
   }
-  new SlotRegistry(ctx)
+  await ctx.plugin(SlotRegistry).await()
   new RemoteService()
-  ctx.provide('settingsScope', { bind: vi.fn(() => scope.scope), describe: () => ({ acceptView: vi.fn() }) } as never)
-  ctx.provide('connection', { api: { settings: { mutate: vi.fn() } } } as never)
+  ctx.provide('configForms', {
+    get: vi.fn(() => scope.scope),
+    whileServed: (_names: readonly string[], register: (served: ReadonlySet<string>) => () => void) =>
+      register(new Set(['feishu-hitl-notifier'])),
+  } as never)
   scope.publish({
     status: 'ready', writable: true, revision: 1, value: { configuration },
   })
@@ -39,25 +42,25 @@ function bench() {
 
 describe('Feishu browser apply', () => {
   it('declares its runtime services', () => {
-    expect(inject).toEqual(['slots', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'remote', 'configForms'])
   })
 
   it('mounts its generated remote and contributes the keyed settings card', async () => {
-    const { ctx, slots, mount } = bench()
-    const root = slots.register({ name: 'root', children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } } } as never, () => null)
+    const { ctx, slots, mount } = await bench()
+    const root = slots.register({ name: 'root', children: { 'plugins.item': { kind: 'list', scope: 'root' } } } as never, () => null)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(mount).toHaveBeenCalledOnce()
-    expect(slots.entries('settings.plugin.item')[0]?.options.key).toBe('feishu-hitl-notifier')
+    expect(slots.entries('plugins.item')[0]?.options.id).toBe('feishu-hitl-notifier')
     root()
   })
 
   it('invokes the mounted Remote namespace from an injected context', async () => {
-    const { ctx, slots, testRecipient } = bench()
-    slots.register({ name: 'root', children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } } } as never, () => null)
+    const { ctx, slots, testRecipient } = await bench()
+    slots.register({ name: 'root', children: { 'plugins.item': { kind: 'list', scope: 'root' } } } as never, () => null)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const entry = slots.entries('settings.plugin.item')[0]
+    const entry = slots.entries('plugins.item')[0]
     const face = entry?.inject?.() as unknown as FeishuCardFace
 
     await face.test('recipient-0')
@@ -67,12 +70,12 @@ describe('Feishu browser apply', () => {
   })
 
   it('removes the card and generated remote on disposal', async () => {
-    const { ctx, slots, mountDispose } = bench()
-    slots.register({ name: 'root', children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } } } as never, () => null)
+    const { ctx, slots, mountDispose } = await bench()
+    slots.register({ name: 'root', children: { 'plugins.item': { kind: 'list', scope: 'root' } } } as never, () => null)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     await fiber.dispose()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(0)
+    expect(slots.entries('plugins.item')).toHaveLength(0)
     expect(mountDispose).toHaveBeenCalledOnce()
   })
 })

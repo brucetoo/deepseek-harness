@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { EpochHeader, Session } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, type EpochHeader, type Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import { Attempts } from '../src/attempts.ts'
 import { RouteKey } from '../src/brand.ts'
@@ -19,13 +19,14 @@ const policy: AutoRouterPolicy = {
 
 function agent(header?: EpochHeader): Agent {
   return {
-    session: { requestHeader: () => header, events: [] },
+    options: {},
+    session: { requestHeader: () => header, deriveMessages: () => [] },
   } as unknown as Agent
 }
 
 function measurement(totalTokens: number): TokenMeasurement {
   return {
-    logRevision: 0,
+    logRevision: SessionLogOffset(0),
     baseline: { kind: 'none', tokens: 0 },
     surfaceDeltaTokens: 0,
     totalTokens,
@@ -54,12 +55,12 @@ describe('Routing', () => {
   it('leaves concrete selection proposals unchanged', async () => {
     const deps = dependencies()
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
-    const proposal = { provider: 'fixed', model: 'one', temperature: 0.3 }
+    const selection = { provider: 'fixed', model: 'one' }
 
     await expect(routing.resolve({
       agent: agent(), turn: 1, step: 1, signal: new AbortController().signal,
-      intent: { kind: 'model', provider: 'fixed', model: 'one' }, proposal,
-    })).resolves.toBe(proposal)
+      selection, phase: 'attempt',
+    })).resolves.toEqual(selection)
     expect(deps.llm.listProviders).not.toHaveBeenCalled()
   })
 
@@ -70,19 +71,18 @@ describe('Routing', () => {
     const attempts = new Attempts()
     const routing = new Routing(deps, policy, router, attempts)
     const current: EpochHeader = {
-      config: { provider: 'auto', model: 'auto' },
-      system: 'system', tools: [{ name: 'tool', description: 'd', parameters: {} }],
+      config: { provider: 'previous', model: 'physical', temperature: 0.2, stop: ['x'], maxTokens: 700 },
+      tools: [{ name: 'tool', description: 'd', parameters: {} }],
     }
     const subject = agent(current)
-    const proposal = { provider: 'previous', model: 'physical', temperature: 0.2, stop: ['x'], maxTokens: 700 }
 
     await expect(routing.resolve({
       agent: subject, turn: 1, step: 1, signal: new AbortController().signal,
-      intent: { kind: 'auto' }, proposal,
-    })).resolves.toEqual({ provider: 'a', model: 'm', temperature: 0.2, stop: ['x'], maxTokens: 700 })
+      selection: { provider: 'auto', model: 'auto' }, phase: 'attempt',
+    })).resolves.toEqual({ provider: 'a', model: 'm' })
     expect(deps.tokenMeter.measure).toHaveBeenCalledWith(subject.session, {
       config: { provider: 'a', model: 'm', temperature: 0.2, stop: ['x'], maxTokens: 700 },
-      system: 'system', tools: current.tools,
+      tools: current.tools,
     })
     expect(attempts.match(subject, 1, 1, 'a', 'm')).toBeDefined()
   })
@@ -91,10 +91,16 @@ describe('Routing', () => {
     const deps = dependencies()
     deps.llm.listProviders.mockReturnValue([{ id: 'a', name: 'A' }])
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
-    const resolved = await routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'old', model: 'old', reasoningEffort: 'high' as never, temperature: 0.1 } })
-    expect(resolved).toEqual({ provider: 'a', model: 'm', temperature: 0.1 })
+    const subject = agent({ config: {
+      provider: 'old', model: 'old', reasoningEffort: 'high' as never, temperature: 0.1,
+    } })
+    const resolved = await routing.resolve({ agent: subject, turn: 1, step: 1,
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })
+    expect(resolved).toEqual({ provider: 'a', model: 'm' })
+    expect(deps.tokenMeter.measure).toHaveBeenCalledWith(subject.session, {
+      config: { provider: 'a', model: 'm', temperature: 0.1 },
+    })
   })
 
   it('uses each candidate header measurement for its own context eligibility without rewriting catalog capacity', async () => {
@@ -109,8 +115,8 @@ describe('Routing', () => {
     const replaceCatalog = vi.spyOn(router, 'replaceCatalog')
     const routing = new Routing(deps, policy, router, new Attempts())
     const resolved = await routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'old', model: 'old' } })
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })
     expect(resolved.provider).toBe('b')
     expect(replaceCatalog).toHaveBeenCalledTimes(1)
     expect(replaceCatalog.mock.calls[0]?.[0]).toEqual([
@@ -126,11 +132,12 @@ describe('Routing', () => {
     const routing = new Routing(deps, policy, router, attempts)
     const subject = agent()
     const first = await routing.resolve({ agent: subject, turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'seed', model: 'seed' } })
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })
     expect(first.provider).toBe('a')
     expect(await routing.canFailover({ agent: subject, turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' }, proposal: first })).toBe(true)
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })).toBe(true)
     expect(router.snapshot().every(status => status.inFlight <= 1)).toBe(true)
   })
 
@@ -139,7 +146,7 @@ describe('Routing', () => {
     deps.llm.listProviders.mockReturnValue([{ id: 'a', name: 'A' }])
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
     const input = { agent: agent(), turn: 1, step: 1, signal: new AbortController().signal,
-      intent: { kind: 'auto' as const }, proposal: { provider: 'auto', model: 'auto' } }
+      selection: { provider: 'auto', model: 'auto' }, phase: 'attempt' as const }
     expect((await routing.resolve(input)).provider).toBe('a')
     routing.release(input.agent)
     deps.llm.listProviders.mockReturnValue([{ id: 'b', name: 'B' }])
@@ -159,8 +166,8 @@ describe('Routing', () => {
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
 
     await expect(routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'auto', model: 'auto' } })).resolves.toMatchObject({ provider: 'b', model: 'm' })
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })).resolves.toMatchObject({ provider: 'b', model: 'm' })
   })
 
   it('fails loudly when an explicit configured route cannot resolve metadata', async () => {
@@ -174,8 +181,8 @@ describe('Routing', () => {
     const routing = new Routing(deps, explicitPolicy, new AutoModelRouter(explicitPolicy), new Attempts())
 
     await expect(routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'auto', model: 'auto' } })).rejects.toThrow('invalid explicit route')
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })).rejects.toThrow('invalid explicit route')
   })
 
   it('keeps healthy provider catalogs when another provider listing fails', async () => {
@@ -186,8 +193,8 @@ describe('Routing', () => {
     })
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
     const resolved = await routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'auto', model: 'auto' } })
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })
     expect(resolved.provider).toBe('b')
   })
 
@@ -196,7 +203,7 @@ describe('Routing', () => {
     deps.llm.listModels.mockRejectedValue(new Error('catalog down'))
     const routing = new Routing(deps, policy, new AutoModelRouter(policy), new Attempts())
     await expect(routing.resolve({ agent: agent(), turn: 1, step: 1,
-      signal: new AbortController().signal, intent: { kind: 'auto' },
-      proposal: { provider: 'auto', model: 'auto' } })).rejects.toBeInstanceOf(AutoCatalogError)
+      signal: new AbortController().signal, selection: { provider: 'auto', model: 'auto' },
+      phase: 'attempt' })).rejects.toBeInstanceOf(AutoCatalogError)
   })
 })

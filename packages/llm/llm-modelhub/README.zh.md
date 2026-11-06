@@ -1,8 +1,24 @@
+---
+description: "将 ByteDance ModelHub 作为可安装 LLM Provider 加入，并配置精确 endpoint 与模型目录。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-llm-modelhub
 
 [English](README.md) | 中文
 
+## 概述
+
 可选的 ByteDance ModelHub 模型提供方插件，用于 Harness LLM seam。该包同时是 Cordis 插件和可安装组合包：插件在 `ctx.llm` 上注册固定的 `bytedance-modelhub` 路由，[`cordis.patch.yml`](cordis.patch.yml) 提供内部端点和随包模型目录。`dsh-base` 不挂载该路由。
+
+## 目录
+
+- 安装
+- 配置
+- 请求行为
+- 开发备注
+- 模型体验
+- 已知限制与延后工作
 
 ## 安装
 
@@ -43,6 +59,10 @@ dsh plugin --profile headless add @deepseek-ai/dsh-llm-modelhub
 ## 请求行为
 
 每次请求都会解析凭据，将其加入 `ak` 查询参数，抑制普通 Bearer 标头，并在 `X-TT-LOGID` 中加入新的 UUID。请求使用 pi-ai 的 OpenAI Chat Completions 序列化，并将 ModelHub 兼容项固定为 `supportsStore: false`、`supportsDeveloperRole: false` 和 `maxTokensField: max_tokens`。提供方错误文本会在可能进入会话日志前清除凭据的原始形式和 URL 编码形式。
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

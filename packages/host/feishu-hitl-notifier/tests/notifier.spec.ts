@@ -3,27 +3,13 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore, { type Session } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionTitleService from '@deepseek-ai/dsh-session-title'
-import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import FeishuHitlNotifier, { FEISHU_HITL_SETTINGS_NAMESPACE, validateNotifierConfiguration } from '@deepseek-ai/dsh-feishu-hitl-notifier'
-
-class MemorySettings extends SettingsProvider {
-  readonly writable = true
-  private doc: Record<string, unknown>
-  constructor(ctx: Context, config: { doc?: Record<string, unknown> } = {}) {
-    super(ctx)
-    this.doc = structuredClone(config.doc ?? {})
-  }
-  protected load(): Promise<Record<string, unknown>> { return Promise.resolve(structuredClone(this.doc)) }
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
-    this.doc[ns] = structuredClone(section)
-    return Promise.resolve()
-  }
-}
+import FeishuHitlNotifier, { validateNotifierConfiguration } from '@deepseek-ai/dsh-feishu-hitl-notifier'
 
 class StubSubprocess extends SubprocessRuntime {
   readonly specs: SubprocessSpawnSpec[] = []
@@ -38,6 +24,10 @@ class StubSubprocess extends SubprocessRuntime {
     return Promise.resolve(`/usr/local/bin/${command}`)
   }
 
+  terminalEnvironment(): Promise<{ platform: 'posix' }> {
+    return Promise.resolve({ platform: 'posix' })
+  }
+
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.specs.push(structuredClone(spec))
     const terminate = vi.fn(() => undefined)
@@ -49,7 +39,7 @@ class StubSubprocess extends SubprocessRuntime {
       }, { once: true }))
       : Promise.resolve(this.outcome)
     return {
-      pid: 1, stdin: undefined, stdout: undefined, stderr: undefined,
+      stdin: undefined, stdout: undefined, stderr: undefined, control: undefined,
       collected: {
         stdout: { readFrom: () => this.stdout },
         stderr: { readFrom: () => ({ text: 'private stderr', nextOffset: 14, lossy: false }) },
@@ -61,12 +51,21 @@ class StubSubprocess extends SubprocessRuntime {
   spawnTerminal(): never { throw new Error('unused') }
 }
 
-const makeAgent = (id = 'session-1'): Agent => ({
-  id,
-  session: { id, events: [] } as unknown as Session,
-}) as unknown as Agent
+const makeAgent = (value = 'session-1'): Agent => {
+  const id = SessionId(value)
+  return {
+    id,
+    session: Session.create(id, undefined, {
+      version: SESSION_FORMAT_VERSION,
+      id,
+      createdAt: 0,
+      isSeeded: false,
+      delegationDepth: 0,
+    }),
+  } as Agent
+}
 
-const baseConfig = {
+const baseConfiguration = {
   enabled: true,
   webBaseUrl: 'https://dsh.example.test/app',
   recipients: [
@@ -75,21 +74,27 @@ const baseConfig = {
   ],
   summaryMaxChars: 80,
   includeSessionTitle: true,
+}
+
+const cli = {
   cli: { executable: 'feishu-cli', configPath: '~/.feishu-cli/config.yaml', timeoutMs: 10_000 },
 }
 
-async function mounted(options: { config?: typeof baseConfig; settings?: Record<string, unknown> } = {}) {
+async function mounted(options: { config?: typeof baseConfiguration } = {}) {
   const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(StubSubprocess)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionTitleService, { fallbackMaxWords: 8, fallbackMaxBytes: 80, maxTitleBytes: 120 })
-  await ctx.plugin(MemorySettings, { doc: options.settings ?? {} })
-  ctx.userQuestions.registerProvider({ ask: async request => ({
+  ctx.on('user-questions/request', request => Promise.resolve({
     answers: [{ id: request.questions[0]?.id ?? 'missing', selected: ['done'] }],
-  }) })
-  const notifierFiber = ctx.plugin(FeishuHitlNotifier, options.config ?? baseConfig)
+  }))
+  const notifierFiber = ctx.plugin(FeishuHitlNotifier, {
+    configuration: options.config ?? baseConfiguration,
+    ...cli,
+  })
   await notifierFiber.await()
   return { ctx, notifier: ctx.feishuHitlNotifier, subprocess: ctx.subprocess as StubSubprocess, notifierFiber }
 }
@@ -98,84 +103,39 @@ const contentOf = (spec: SubprocessSpawnSpec): string => spec.argv[spec.argv.ind
 
 async function request(ctx: Context, id: string, question = 'Choose rollout'): Promise<void> {
   const caller = makeAgent(id)
-  ctx.agents.enter(caller, undefined)
   await ctx.parallel('user-question/requested', { agent: caller, questions: [{ id: 'q', question }] })
 }
 
 describe('FeishuHitlNotifier service', () => {
   it('rejects a duplicate Host service instance', async () => {
     const { ctx } = await mounted()
-    expect(() => new FeishuHitlNotifier(ctx, baseConfig)).toThrow(/service "feishuHitlNotifier" has been registered/)
+    await expect(ctx.plugin(FeishuHitlNotifier, {
+      configuration: baseConfiguration,
+      ...cli,
+    })).rejects.toThrow(/service "feishuHitlNotifier" has been registered/)
   })
 
-  it('registers one atomic settings object and resolves the CLI while disabled', async () => {
-    const config = { ...baseConfig, enabled: false, recipients: [] }
+  it('resolves the deployment CLI while notifications are disabled', async () => {
+    const config = { ...baseConfiguration, enabled: false, recipients: [] }
     const { ctx, subprocess } = await mounted({ config })
-    const descriptor = ctx.settings.describe().find(item => item.ns === FEISHU_HITL_SETTINGS_NAMESPACE)
-    expect(descriptor?.base).toEqual({ configuration: {
-      enabled: false,
-      webBaseUrl: baseConfig.webBaseUrl,
-      recipients: [],
-      summaryMaxChars: 80,
-      includeSessionTitle: true,
-    } })
-    expect(JSON.stringify(descriptor)).not.toContain('cli')
     expect(subprocess.resolutions).toEqual(['feishu-cli'])
     await request(ctx, 'disabled')
     expect(subprocess.specs).toHaveLength(0)
   })
 
-  it('uses live settings updates for later events', async () => {
-    const { ctx, subprocess } = await mounted()
-    await request(ctx, 'before')
-    await vi.waitFor(() => { expect(subprocess.specs).toHaveLength(2) })
-    await ctx.settings.replace(FEISHU_HITL_SETTINGS_NAMESPACE, { configuration: {
-      enabled: true,
-      webBaseUrl: 'https://updated.example.test/dsh',
-      recipients: [{ type: 'user_id', id: 'new-user' }],
-      summaryMaxChars: 20,
-      includeSessionTitle: false,
-    } })
-    await request(ctx, 'after', 'A question that will be shortened after twenty characters')
-    await vi.waitFor(() => { expect(subprocess.specs).toHaveLength(3) })
-    expect(subprocess.specs[2]?.argv).toContain('new-user')
-    expect(contentOf(subprocess.specs[2]!)).toContain('https://updated.example.test/dsh?session=after')
-  })
-
-  it('takes one immutable effective snapshot for every event', async () => {
-    const { ctx, subprocess } = await mounted()
-    const originalSpawn = subprocess.spawn.bind(subprocess)
-    subprocess.spawn = (spec) => {
-      const result = originalSpawn(spec)
-      if (subprocess.specs.length === 1) {
-        void ctx.settings.replace(FEISHU_HITL_SETTINGS_NAMESPACE, { configuration: {
-          enabled: true, webBaseUrl: 'https://changed.example.test',
-          recipients: [{ type: 'user_id', id: 'changed' }], summaryMaxChars: 10, includeSessionTitle: false,
-        } })
-      }
-      return result
-    }
-    await request(ctx, 'atomic', 'same event content')
-    await vi.waitFor(() => { expect(subprocess.specs).toHaveLength(2) })
-    expect(subprocess.specs.map(spec => spec.argv[spec.argv.indexOf('--receive-id') + 1])).toEqual([
-      'operator@example.com', 'oc_oncall',
-    ])
-    expect(subprocess.specs.map(contentOf)).toEqual([contentOf(subprocess.specs[0]!), contentOf(subprocess.specs[0]!)])
-  })
-
   it.each([
-    [{ ...baseConfig, enabled: true, recipients: [] }, 'at least one recipient'],
-    [{ ...baseConfig, recipients: Array.from({ length: 101 }, (_, i) => ({ type: 'user_id' as const, id: `u${i}` })) }, 'at most 100'],
-    [{ ...baseConfig, recipients: [{ type: 'user_id' as const, id: ' same ' }, { type: 'user_id' as const, id: 'same' }] }, 'unique'],
-    [{ ...baseConfig, recipients: [{ type: 'user_id' as const, id: '😀'.repeat(513) }] }, '512'],
-    [{ ...baseConfig, webBaseUrl: '/relative' }, 'absolute'],
-    [{ ...baseConfig, webBaseUrl: 'https://user@example.test/path' }, 'userinfo'],
-    [{ ...baseConfig, webBaseUrl: 'https://example.test/path?secret=1' }, 'query'],
-    [{ ...baseConfig, webBaseUrl: 'https://example.test/path?' }, 'query'],
-    [{ ...baseConfig, webBaseUrl: 'https://example.test/path#secret' }, 'hash'],
-    [{ ...baseConfig, webBaseUrl: 'https://example.test/path#' }, 'hash'],
-    [{ ...baseConfig, summaryMaxChars: 0 }, 'between 1 and 1000'],
-    [{ ...baseConfig, summaryMaxChars: 1.5 }, 'integer'],
+    [{ ...baseConfiguration, enabled: true, recipients: [] }, 'at least one recipient'],
+    [{ ...baseConfiguration, recipients: Array.from({ length: 101 }, (_, i) => ({ type: 'user_id' as const, id: `u${i}` })) }, 'at most 100'],
+    [{ ...baseConfiguration, recipients: [{ type: 'user_id' as const, id: ' same ' }, { type: 'user_id' as const, id: 'same' }] }, 'unique'],
+    [{ ...baseConfiguration, recipients: [{ type: 'user_id' as const, id: '😀'.repeat(513) }] }, '512'],
+    [{ ...baseConfiguration, webBaseUrl: '/relative' }, 'absolute'],
+    [{ ...baseConfiguration, webBaseUrl: 'https://user@example.test/path' }, 'userinfo'],
+    [{ ...baseConfiguration, webBaseUrl: 'https://example.test/path?secret=1' }, 'query'],
+    [{ ...baseConfiguration, webBaseUrl: 'https://example.test/path?' }, 'query'],
+    [{ ...baseConfiguration, webBaseUrl: 'https://example.test/path#secret' }, 'hash'],
+    [{ ...baseConfiguration, webBaseUrl: 'https://example.test/path#' }, 'hash'],
+    [{ ...baseConfiguration, summaryMaxChars: 0 }, 'between 1 and 1000'],
+    [{ ...baseConfiguration, summaryMaxChars: 1.5 }, 'integer'],
   ])('rejects invalid configuration %#', (config, message) => {
     expect(() => {
       validateNotifierConfiguration({
@@ -203,7 +163,7 @@ describe('FeishuHitlNotifier service', () => {
   })
 
   it('tests exactly one normalized active recipient with a fixed safe card while disabled', async () => {
-    const config = { ...baseConfig, enabled: false, recipients: [{ type: 'email' as const, id: ' operator@example.com ' }] }
+    const config = { ...baseConfiguration, enabled: false, recipients: [{ type: 'email' as const, id: ' operator@example.com ' }] }
     const { notifier, subprocess } = await mounted({ config })
     await expect(notifier.testRecipient({ type: 'email', id: 'operator@example.com' })).resolves.toEqual({ status: 'sent' })
     expect(subprocess.specs).toHaveLength(1)

@@ -1,14 +1,32 @@
+---
+description: "创建由 owner 限定的公共浏览器 Provider，并提供预备元素操作与稳定浏览器错误。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser
 
 [English](README.md) | 中文
 
-一个通过 `ctx.browser` 暴露可见临时浏览器的提供方无关 Service Definition。服务把每次操作绑定到确切的所有者 `Agent`，要求提供方串行执行调用，并用 URL、标题和 ARIA 快照表示页面。
+## 概述
+
+为无凭据公共页面创建一个可见临时浏览器。每次操作都属于一个 Agent，Provider 调用串行执行，页面观察包含 URL、标题与 ARIA 快照。
+
+## 目录
+
+- API
+- 开发备注
+- 模型体验
+- 已知限制与暂缓事项
 
 ## API
 
 `BrowserRuntime` 定义 `open`、`snapshot`、`prepare`、`commit`、`release`、`wait` 与 `close`。元素变更使用两阶段操作：`prepare` 保留一个确切的无障碍元素，并返回不透明的 `BrowserPreparedActionId` 及其可观察指纹；审批后，`commit` 再次检查并仅操作该保留元素一次。`release` 在拒绝或取消时释放预备状态，不执行操作。
 
 `parsePublicBrowserUrl` 只接受不含凭据的绝对 HTTP(S) URL。`BrowserError` 携带稳定的共享及提供方专用 `BROWSER_*` 错误码。
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

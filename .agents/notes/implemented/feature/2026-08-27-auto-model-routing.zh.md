@@ -12,15 +12,15 @@ Status: implemented
 
 ## 决策
 
-`@deepseek-ai/dsh-llm-auto-router` 是使用现有 `agent/request`、`llm/stream` 和 `agent/request-error` 扩展点的可用性优先策略插件。基础组合包以默认策略挂载它，而 `agent-default-model` 仍将随附的组合默认值固定为 `deepseek-official/deepseek-v4-flash`。用户通过现有逻辑模型选择意图启用 Auto。具体提供方／模型选择保持原样通过。
+`@deepseek-ai/dsh-llm-auto-router` 是使用 `agent/resolve-model`、`llm/stream` 和 `agent/request-error` 的可用性优先策略插件。基础组合包以默认策略挂载它，而 `agent-default-model` 仍将随附的组合默认值固定为 `deepseek-official/deepseek-v4-flash`。用户通过 `{ provider: 'auto', model: 'auto' }` 启用默认 Auto 候选池；`{ provider: 'auto', model: '<pool>' }` 选择命名候选池。其他提供方／模型选择保持原样通过。
 
-Auto 与 `LlmCallConfig` 保持分离。非模型消息表面的 `model/selection` 事件存储 `{ kind: 'auto', pool? }` 或具体选择。Host 的恢复与 fork 从该事件派生逻辑意图，而不是使用最新物理请求 header。提示词组装为当前步骤捕获一个逻辑意图：Auto 暴露逻辑变量 `provider=auto` 和 `model=auto`，随后路由器只替换请求路由，再由未修改的 AgentLoop 准备并记录物理调用。
+非模型消息表面的 `model/selection` 事件存储请求的 `ModelSelection`，其中也包括虚拟 Auto 选择。Host 的恢复与 fork 从该事件派生请求选择，而不是使用最新物理请求 header。AgentLoop 在工具准入和提示词组装前以 `preparation` 阶段调用 `agent/resolve-model`；Auto 在不预留容量的情况下预览兼容物理路由。每次请求或重试都会执行 `attempt` 阶段，并在调用准备前预留选中的物理路由。因此提示词变量、工具准入、请求 header、请求上下文和助手消息来源都标识物理路由。
 
-这使 agent loop 保持不变。路由器使用现有 waterfall，而不新增模型路由能力 seam，也不嵌套另一条 LLM 流。
+解析 waterfall 让路由策略留在 AgentLoop 之外，同时为组装与调度提供不同的执行时点。它不新增模型路由能力 seam，也不嵌套另一条 LLM 流。
 
 ## 候选选择与健康状态
 
-提供方目录枚举默认候选，并继续只为手动路由提供建议信息，保留[建议性目录决策](../architecture/2026-07-15-llm-model-catalog-and-acp-selection.zh.md)。显式路由配置可以加入未公告模型。候选池、路由排除、启用状态、偏好乘数、并发上限、token 余量、评分权重、熔断阈值、冷却时间、半开并发量及每步骤故障切换预算都是经过校验的插件配置。
+提供方目录枚举默认候选，并继续只为手动路由提供建议信息，保留[按提供方路由的适配器决策](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)。显式路由配置可以加入未公告模型。候选池、路由排除、启用状态、偏好乘数、并发上限、token 余量、评分权重、熔断阈值、冷却时间、半开并发量及每步骤故障切换预算都是经过校验的插件配置。
 
 每次 Auto 尝试解析精确模型元数据，并按候选池、当前步骤已尝试路由、已声明模态、上下文容量、输出额度、熔断状态及并发容量进行过滤。缺少必需元数据会使路由失去资格。策略不读取提示词文本，也不判断任务质量；它使用内容块模态、每路由 token 测量、提供方无关失败事实、首 token 延迟及在途负载。它不会截断上下文、转换图片或降低推理等级。
 
@@ -36,7 +36,7 @@ Auto 与 `LlmCallConfig` 保持分离。非模型消息表面的 `model/selectio
 
 ## Host 与 Web 集成
 
-Host 协议和 Web 模型选择器分别携带带判别字段的逻辑意图与 `lastRoute` 物理来源。两个 Web 选择入口都合成一行 Auto；Auto 生效时，不会选中任何物理目录行，并隐藏推理等级控件。Headless Agent 读取同一个默认模型服务并安装相同的逻辑选择捕获。
+Host 协议携带一个具体 `ModelSelection`；虚拟 Auto 身份与物理 `request/header` 及助手消息来源保持分离。`/model` 弹窗添加一行 Auto，composer 会显示当前 Auto 选择，但不会选中物理目录行或显示推理等级控件。Headless Agent 读取同一个默认模型服务并安装相同的持久选择捕获。
 
 路由器发布可选的 `llmAutoRouter` 操作，用于校验候选池、判断可路由性及图片准入。Host 通过 `ctx.get` 读取该服务，因此基础路由器挂载会启用 Host 侧 Auto 选择与图片预检，同时不把该服务变成 Host 的严格注入依赖。
 
@@ -48,18 +48,18 @@ Host 协议和 Web 模型选择器分别携带带判别字段的逻辑意图与 
 
 **在 `llm/stream` 内切换。** 已准备调用绑定一个适配器，且物理 header 已经写入。让 agent loop 重试开放步骤，可使下一条路由经过常规准备、日志记录及来源标注。
 
-**只持久化物理请求 header。** 这会丢失尚未使用的 Auto 选择，并把会话恢复为恰好最后一次提供服务的路由的手动选择。逻辑意图与物理调度需要独立的持久事实。
+**只持久化物理请求 header。** 这会丢失尚未使用的 Auto 选择，并把会话恢复为恰好最后一次提供服务的路由的手动选择。请求的虚拟身份与物理调度需要独立的持久事实。
 
 **分析提示词内容。** 内容感知或质量路由会增加隐私暴露，并定义另一种策略。该路由器只使用元数据，并以可用性为先。
 
 ## 后果
 
-Auto 在不改变手动路由、适配器所有权或 AgentLoop 的情况下改善可用性与负载分配。会话日志可以解释持久逻辑选择及每次物理尝试，但重复运行可能选择不同的健康路由，跨路由重试也可能失去提供方本地 KV Cache 复用。
+Auto 在不改变手动路由或适配器所有权的情况下改善可用性与负载分配。会话日志可以解释持久虚拟选择及每次物理尝试，但重复运行可能选择不同的健康路由，跨路由重试也可能失去提供方本地 KV Cache 复用。
 
-兼容性依赖完整的适配器元数据，token 测量仍是估算值，健康状态不会跨进程协调或在重启后保留。Auto 意图不携带推理等级偏好。
+兼容性依赖完整的适配器元数据，token 测量仍是估算值，健康状态不会跨进程协调或在重启后保留。虚拟 Auto 选择不携带推理等级偏好。
 
 当前 `agent/request-error` 载荷只标明提供方，不包含失败模型或尝试 id。因此，路由器只把恢复归因于提供方与模型也匹配当前持久请求 header 的最新已调度 Auto 尝试；若物理尝试发生重叠，仍需更丰富的失败身份才能直接关联。
 
 故障切换还依赖[现有请求恢复扩展点](../architecture/2026-06-21-bounded-llm-request-recovery.zh.md)、其 waterfall 顺序和重试动作。新的恢复插件必须保留 Auto 仅在提交前拥有跨路由决策，以及委托后的同路由固定。直接调用 `ctx.llm.stream()` 的消费方没有 Agent 步骤或请求错误生命周期，仍是单路由、单次尝试调用方。
 
-当前验证要求运行该包的路由、流、故障切换、持久化、运行时不变量和 Loader 组合检查；Host 与 Web 检查固定逻辑选择、物理来源和手动选择行为。
+当前验证要求运行该包的路由、流、故障切换、持久化、运行时不变量和 Loader 组合检查；Host 与 Web 检查固定虚拟选择、物理来源和手动选择行为。

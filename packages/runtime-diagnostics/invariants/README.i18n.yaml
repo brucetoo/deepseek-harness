@@ -1,6 +1,37 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/runtime-diagnostics/invariants/README.md
-README.md: 1435a7ad9a4e994ad2c89b5a94e18e86889a831f
-README.zh.md: 09ee5006c7d9b43c97468778632239780c49949b
+/:
+  en: b90bbb4814ada566
+  zh: ceefbaec7d5a70ee
+/dsh-invariants:
+  en: 4633310ffe19cfe2
+  zh: 8762b6a81e8b49b0
+/dsh-invariants/summary:
+  en: 8777c5161e01d885
+  zh: be6a5bdcbcf60a29
+/dsh-invariants/table-of-contents:
+  en: c75d80b7983891f5
+  zh: 787a27d91e54e13b
+/dsh-invariants/service-invariantregistry-ctx-invariants:
+  en: b27a1f79f69a7387
+  zh: c640a0e804126039
+/dsh-invariants/package-companions:
+  en: fddf20efd2be6c4e
+  zh: 52560587d3442509
+/dsh-invariants/composition:
+  en: 8ea10ea6a1087678
+  zh: b684b97c427591e4
+/dsh-invariants/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269
+/dsh-invariants/model-experience:
+  en: 630f1efb4374e3e3
+  zh: 9881e82f3041f9ac
+/dsh-invariants/model-experience/kv-cache-effect:
+  en: 4a424216bf4a6b6c
+  zh: c73715f6cfe4d3d5
+/dsh-invariants/known-limitations-and-deferred-work:
+  en: 2a73e6f26947d24a
+  zh: 234276e13b41a6f7

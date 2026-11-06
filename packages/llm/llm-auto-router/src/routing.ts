@@ -1,6 +1,6 @@
 /** Candidate discovery and per-request automatic physical routing. */
 
-import type { Agent, AutoModelSelection, ModelSelection, ModelSelectionIntent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { contentHasImage, type LlmCallConfig, type LlmModelInfo, type LlmResolvedModelInfo, type ModelModality } from '@deepseek-ai/dsh-llm'
 import { canonicalHeader, type EpochHeader, type Session } from '@deepseek-ai/dsh-session'
 import type TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -9,7 +9,7 @@ import { buildCandidateCatalog } from './catalog.ts'
 import type { AutoRouteAttempt } from './attempts.ts'
 import { Attempts } from './attempts.ts'
 import { AutoModelRouter, AutoRoutingError } from './policy.ts'
-import type { AutoRouteDecision, AutoRouterPolicy, CandidateRoute } from './types.ts'
+import type { AutoModelSelection, AutoRouteDecision, AutoRouteRequest, AutoRouterPolicy, CandidateRoute } from './types.ts'
 
 interface LlmDirectory {
   listProviders(): readonly { id: string }[]
@@ -22,14 +22,14 @@ interface RoutingDependencies {
   readonly tokenMeter: Pick<TokenMeter, 'measure'>
 }
 
-/** Inputs captured from the prepended `agent/request` listener. */
+/** Inputs captured from the model-resolution waterfall. */
 export interface RouteResolution {
   readonly agent: Agent
   readonly turn: number
   readonly step: number
   readonly signal: AbortSignal
-  readonly intent: ModelSelectionIntent | undefined
-  readonly proposal: LlmCallConfig
+  readonly selection: Readonly<ModelSelection>
+  readonly phase: 'preparation' | 'attempt'
 }
 
 /** Stable failure when no provider directory can be read. */
@@ -68,6 +68,20 @@ function requiredModalities(session: Session): readonly ModelModality[] {
 function candidateConfig(proposal: LlmCallConfig, route: CandidateRoute): LlmCallConfig {
   const { reasoningEffort: _inheritedEffort, ...controls } = proposal
   return { ...controls, provider: route.provider, model: route.model }
+}
+
+function requestControls(agent: Agent): LlmCallConfig {
+  const current = agent.session.requestHeader()?.config
+  if (current === undefined) {
+    const maxTokens = agent.options?.maxTokens
+    return {
+      provider: 'auto',
+      model: 'auto',
+      ...maxTokens === undefined ? {} : { maxTokens },
+    }
+  }
+  const { provider: _provider, model: _model, reasoningEffort: _reasoningEffort, ...controls } = current
+  return { provider: 'auto', model: 'auto', ...controls }
 }
 
 /** Owns cached exact-model discovery and request-time route reservations. */
@@ -124,35 +138,58 @@ export class Routing {
     return this.#catalog
   }
 
+  #pool(selection: Readonly<ModelSelection>): string | undefined {
+    if (selection.provider !== this.policy.virtualProvider) return undefined
+    const pool = selection.model === this.policy.virtualModel ? 'default' : selection.model
+    this.validatePool(pool)
+    return pool
+  }
+
+  #routeRequest(
+    input: RouteResolution,
+    routes: readonly CandidateRoute[],
+    pool: string,
+    attemptedRoutes: ReadonlySet<RouteKey>,
+  ): AutoRouteRequest {
+    const proposal = requestControls(input.agent)
+    const estimatedInputTokensByRoute = new Map(routes.map((route) => {
+      const header = this.#header(input.agent.session, candidateConfig(proposal, route))
+      return [route.key, this.dependencies.tokenMeter.measure(input.agent.session, header).totalTokens] as const
+    }))
+    return {
+      pool,
+      requiredModalities: requiredModalities(input.agent.session),
+      estimatedInputTokens: 0,
+      estimatedInputTokensByRoute,
+      ...proposal.maxTokens === undefined ? {} : { requestedMaxTokens: proposal.maxTokens },
+      attemptedRoutes,
+      now: Date.now(),
+    }
+  }
+
   /**
-   * Resolve a logical Auto proposal to one reserved physical route.
-   * @param input - current Agent request and assembled logical intent.
-   * @returns the unchanged concrete proposal or selected physical config.
+   * Resolve a virtual provider selection to one physical route.
+   * @param input - requested selection and preparation or attempt phase.
+   * @returns the unchanged concrete selection or selected physical route.
    */
-  async resolve(input: RouteResolution): Promise<LlmCallConfig> {
-    if (input.intent?.kind !== 'auto') return input.proposal
+  async resolve(input: RouteResolution): Promise<ModelSelection> {
+    const pool = this.#pool(input.selection)
+    if (pool === undefined) return { ...input.selection }
     const routes = await this.#candidates(input.signal)
-    const pool = input.intent.pool ?? 'default'
+    this.router.replaceCatalog(routes)
+    if (input.phase === 'preparation') {
+      const decision = this.router.preview(
+        this.#routeRequest(input, routes, pool, this.attempts.attemptedRoutes(input.agent, input.turn, input.step)),
+        routes,
+      )
+      return { provider: decision.route.provider, model: decision.route.model }
+    }
     const pin = this.attempts.peekPin(input.agent, input.turn, input.step)
-    let decision
+    let decision: AutoRouteDecision
     if (pin === undefined) {
       const attemptedRoutes = this.attempts.attemptedRoutes(input.agent, input.turn, input.step)
-      const estimatedInputTokensByRoute = new Map(routes.map((route) => {
-        const header = this.#header(input.agent.session, candidateConfig(input.proposal, route))
-        return [route.key, this.dependencies.tokenMeter.measure(input.agent.session, header).totalTokens] as const
-      }))
-      this.router.replaceCatalog(routes)
-      decision = this.router.select({
-        pool,
-        requiredModalities: requiredModalities(input.agent.session),
-        estimatedInputTokens: 0,
-        estimatedInputTokensByRoute,
-        ...input.proposal.maxTokens === undefined ? {} : { requestedMaxTokens: input.proposal.maxTokens },
-        attemptedRoutes,
-        now: Date.now(),
-      })
+      decision = this.router.select(this.#routeRequest(input, routes, pool, attemptedRoutes))
     } else {
-      this.router.replaceCatalog(routes)
       const route = routes.find(candidateRoute => candidateRoute.key === pin)
       if (route === undefined) throw new Error(`llm-auto-router: pinned route ${pin} left the catalog`)
       decision = { route, reason: 'failover' as const, candidateCount: 1 }
@@ -165,7 +202,7 @@ export class Routing {
       reservation.cancel()
       throw error
     }
-    return candidateConfig(input.proposal, decision.route)
+    return { provider: decision.route.provider, model: decision.route.model }
   }
 
   #header(session: Session, config: LlmCallConfig): EpochHeader {
@@ -248,7 +285,7 @@ export class Routing {
     signal: AbortSignal
   }): Promise<ModelSelection> {
     const decision = await this.#decision(input)
-    return { kind: 'model', provider: decision.route.provider, model: decision.route.model }
+    return { provider: decision.route.provider, model: decision.route.model }
   }
 
   /** Release outstanding state for one disposed Agent. */
@@ -270,19 +307,8 @@ export class Routing {
   async canFailover(input: RouteResolution): Promise<boolean> {
     const routes = await this.#candidates(input.signal)
     const attempted = this.attempts.attemptedRoutes(input.agent, input.turn, input.step)
-    const pool = input.intent?.kind === 'auto' ? input.intent.pool ?? 'default' : 'default'
-    const estimatedInputTokensByRoute = new Map(routes.map((route) => {
-      const header = this.#header(input.agent.session, candidateConfig(input.proposal, route))
-      return [route.key, this.dependencies.tokenMeter.measure(input.agent.session, header).totalTokens] as const
-    }))
-    return this.router.canSelect({
-      pool,
-      requiredModalities: requiredModalities(input.agent.session),
-      estimatedInputTokens: 0,
-      estimatedInputTokensByRoute,
-      ...input.proposal.maxTokens === undefined ? {} : { requestedMaxTokens: input.proposal.maxTokens },
-      attemptedRoutes: attempted,
-      now: Date.now(),
-    }, routes)
+    const pool = this.#pool(input.selection)
+    if (pool === undefined) return false
+    return this.router.canSelect(this.#routeRequest(input, routes, pool, attempted), routes)
   }
 }

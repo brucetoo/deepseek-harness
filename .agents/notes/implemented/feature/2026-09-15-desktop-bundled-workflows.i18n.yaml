@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-desktop-bundled-workflows.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-desktop-bundled-workflows.md
-2026-09-15-desktop-bundled-workflows.md: 90486e75e3261be1ee1e40b784a0cc4fc57d25ed
-2026-09-15-desktop-bundled-workflows.zh.md: fd6cdb487d0f205a13560ccf1566116396c350d6
+/agent-note-desktop-bundled-document-and-research-workflows:
+  en: 2daad68754bc252c
+  zh: a184e88ddb365de2
+/agent-note-desktop-bundled-document-and-research-workflows/problem:
+  en: d251ed252873861e
+  zh: 477317d6bb0af832
+/agent-note-desktop-bundled-document-and-research-workflows/decision:
+  en: 4b65d94ab521ec15
+  zh: 817c83a6528ee550
+/agent-note-desktop-bundled-document-and-research-workflows/alternatives-considered:
+  en: 27e4e74689915c8a
+  zh: 961166b6d9fc088a
+/agent-note-desktop-bundled-document-and-research-workflows/verification:
+  en: cb39d609b7db4114
+  zh: cc2bac9e1f385053
+/agent-note-desktop-bundled-document-and-research-workflows/consequences:
+  en: adb65249e29ffcad
+  zh: a47d2dda8a01c4a7

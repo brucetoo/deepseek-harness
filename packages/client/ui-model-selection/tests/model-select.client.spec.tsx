@@ -39,8 +39,7 @@ const reasoning = {
 
 function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
-    current: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-    lastRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
     groups: [{
       id: 'deepseek-official',
@@ -210,7 +209,7 @@ describe('ModelSelect catalog badges', () => {
 describe('ModelSelect reasoning effort', () => {
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
-    const select = vi.fn(async (selection: ModelSelectionIntent) => {
+    const select = vi.fn(async (selection: ModelSelection) => {
       directory.set(state({ current: selection }))
       return { ok: true as const, value: undefined }
     })
@@ -235,7 +234,6 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
     await waitFor(() => {
       expect(select).toHaveBeenCalledWith({
-        kind: 'model',
         provider: 'deepseek-official',
         model: 'deepseek-v4-flash',
         reasoningEffort: 'max',
@@ -256,8 +254,7 @@ describe('ModelSelect reasoning effort', () => {
           reasoning: { efforts: [{ id: 'standard', name: 'Standard' }] },
         }],
       }],
-      current: { kind: 'model', provider: 'provider', model: 'model' },
-      lastRoute: { provider: 'provider', model: 'model' },
+      current: { provider: 'provider', model: 'model' },
     }))
     render(<ModelSelect renderSlot={renderLabel}
       locked={false}
@@ -278,8 +275,7 @@ describe('ModelSelect reasoning effort', () => {
 
   it('opens model choices without exposing a saved route absent from the catalog', () => {
     const directory = createSnapshotStore(state({
-      current: { kind: 'model', provider: 'deepseek-official', model: 'removed-model' },
-      lastRoute: { provider: 'deepseek-official', model: 'removed-model' },
+      current: { provider: 'deepseek-official', model: 'removed-model' },
     }))
     const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     render(<ModelSelect renderSlot={renderLabel}

@@ -8,7 +8,7 @@ import {
   type BrowserPreparedAction,
 } from '@deepseek-ai/dsh-browser'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import {
   projectBrowserObservation,
   type BrowserToolObservation,
@@ -23,7 +23,7 @@ export interface ResolvedConfig {
 
 interface ApprovalIdentity {
   readonly agent: Agent
-  readonly callId: CallId
+  readonly callId: ToolCallId
   readonly signal: AbortSignal
 }
 

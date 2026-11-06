@@ -1,8 +1,23 @@
+---
+description: "Route Auto model selections across compatible providers using health, latency, load, and bounded failover."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-llm-auto-router
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Availability-first automatic model routing for Agent requests. Explicit model selections remain fixed; an Auto selection resolves every physical attempt from configured pools using compatibility, process-local health, first-token latency, and in-flight load.
+
+## Table of Contents
+
+- Configuration
+- Selection and failover
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Configuration
 
@@ -14,9 +29,13 @@ Health state is shared only by plugin instances with the same resolved policy an
 
 ## Selection and failover
 
-`model/selection` stores logical Auto or concrete intent independently from physical request headers. Auto prompt variables remain `provider=auto` and `model=auto`; physical provider/model values are recorded by `request/header`, route events, and assistant provenance.
+`model/selection` stores virtual Auto or concrete selection independently from physical request headers. Preparation previews a physical route for tool and prompt assembly; each attempt resolves again and reserves its route. Physical provider/model values are recorded by `request/header`, route events, and assistant source identity.
 
 The router may switch routes only before output commitment. Non-empty text or reasoning, any tool-call delta, and `block-end` commit an attempt. A route event is appended after the delegated iterator successfully enters and before its first chunk is yielded; construction and first-read failures leave no route event. Context overflow remains owned by compaction. When another request-error listener chooses retry, the router pins that retry to the same physical route and consumes the pin only after the replacement reservation succeeds.
+
+## Dev Note
+
+None.
 
 ## Model Experience
 
@@ -24,7 +43,7 @@ The router may switch routes only before output commitment. Non-empty text or re
 
 #### What the model sees
 
-The plugin adds no prompt text, messages, schemas, or tool results. All physical attempts receive the same assembled messages. Auto variables remain logical metadata (`provider=auto`, `model=auto`) and do not expose the selected physical route to the prompt.
+The `agent/resolve-model` plugin adds no prompt text, messages, schemas, or tool results. Tool and prompt assembly use the physical route preview, and retries receive the same assembled messages.
 
 #### Token effect
 

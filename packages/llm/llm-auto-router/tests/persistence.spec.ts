@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlite'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { AutoRouteAttemptId } from '../src/brand.ts'
 import type {} from '../src/index.ts'
 
@@ -16,27 +15,24 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 
-async function backend(kind: 'jsonl' | 'sqlite'): Promise<Context> {
+async function backend(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  if (kind === 'jsonl') {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-llm-auto-router-jsonl-'))
-    dirs.push(root)
-    await ctx.plugin(JsonlSessionPersistence, { root })
-  } else {
-    await ctx.plugin(SqliteSessionPersistence, { path: ':memory:' })
-  }
+  const root = await mkdtemp(join(tmpdir(), 'dsh-llm-auto-router-jsonl-'))
+  dirs.push(root)
+  await ctx.plugin(JsonlSessionPersistence, { root })
   return ctx
 }
 
-describe.each(['jsonl', 'sqlite'] as const)('%s auto-router persistence', (kind) => {
+describe('JSONL auto-router persistence', () => {
   it('round-trips logical selections and physical routing facts without deriving routing messages', async () => {
-    const ctx = await backend(kind)
+    const ctx = await backend()
     try {
-      const session = ctx.sessions.create(SessionId(`auto-router-${kind}`))
-      const autoSelection = session.append('model/selection', { kind: 'auto', pool: 'fast' })
+      const session = ctx.sessions.create(SessionId('auto-router-jsonl'))
+      const writer = await ctx.sessionPersistence.create(session.header)
+      const autoSelection = session.append('model/selection', { provider: 'auto', model: 'fast' })
       const concreteSelection = session.append('model/selection', {
-        kind: 'model', provider: 'fixed', model: 'fixed-model', reasoningEffort: ReasoningEffortId('high'),
+        provider: 'fixed', model: 'fixed-model', reasoningEffort: ReasoningEffortId('high'),
       })
       session.append('turn/start', { turn: 1 })
       session.append('step/start', { turn: 1, step: 1 })
@@ -48,7 +44,7 @@ describe.each(['jsonl', 'sqlite'] as const)('%s auto-router persistence', (kind)
         header: { config: { provider: 'route-a', model: 'model-a' } },
         reason: 'initial',
       })
-      const attemptId = AutoRouteAttemptId(`${kind}:1:1:1`)
+      const attemptId = AutoRouteAttemptId('jsonl:1:1:1')
       const route = session.append('llm/auto-route', {
         attemptId,
         turn: 1,
@@ -72,6 +68,7 @@ describe.each(['jsonl', 'sqlite'] as const)('%s auto-router persistence', (kind)
       session.append('assistant/message', {
         turn: 1,
         step: 1,
+        stream: [],
         message: createAssistantMessage({
           content: [{ type: 'text', text: 'hello back' }],
           source: { provider: 'route-b', model: 'model-b' },
@@ -89,7 +86,8 @@ describe.each(['jsonl', 'sqlite'] as const)('%s auto-router persistence', (kind)
         },
       ])
       await ctx.sessions.flush(session)
-      const loaded = await ctx.sessionPersistence.load(session.id)
+      const handle = await ctx.sessionPersistence.open(session.id, 'read')
+      const loaded = await handle.read()
 
       expect(loaded.events.filter(event => event.type === 'model/selection')).toEqual([
         autoSelection,
@@ -97,10 +95,18 @@ describe.each(['jsonl', 'sqlite'] as const)('%s auto-router persistence', (kind)
       ])
       expect(loaded.events.find(event => event.type === 'llm/auto-route')).toEqual(route)
       expect(loaded.events.find(event => event.type === 'llm/auto-failover')).toEqual(failover)
-      const restored = Session.fromRestore(session.id, loaded.events, loaded.meta)
+      const restored = Session.fromRestore(
+        session.id,
+        loaded.events,
+        handle.header,
+        handle.inheritedEventCount,
+        loaded.eventState,
+      )
       expect(restored.deriveMessages()).toEqual(session.deriveMessages())
       expect(JSON.stringify(restored.deriveMessages())).not.toContain('llm/auto')
       expect(JSON.stringify(restored.deriveMessages())).not.toContain('SERVER')
+      await handle.close()
+      await writer.close()
     } finally {
       await ctx.fiber.dispose()
     }

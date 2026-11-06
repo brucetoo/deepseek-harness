@@ -98,7 +98,7 @@ export class ModelDirectory {
     this.store.update((s) => { s.status = 'selecting'; s.pending = selection; s.error = null })
     const result = await this.sessions.selectModel({
       sessionId: this.sessionId,
-      selection,
+      ...selection,
     })
     if (this.disposed || generation !== this.generation) {
       return result.ok ? { ok: true, value: undefined } : result

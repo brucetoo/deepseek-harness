@@ -34,7 +34,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import type { ModelReasoningEffort, ModelSelectionIntent } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
   IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast,
@@ -43,6 +43,9 @@ import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/d
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 import { orderModelProviders } from './provider-order.ts'
+import { concreteSelection } from './concrete-selection.ts'
+
+const AUTO_SELECTION = { provider: 'auto', model: 'auto' } as const satisfies ModelSelection
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
@@ -104,13 +107,7 @@ export function ModelSelect(
     group.models.map(model => ({
       group,
       model,
-      selection: {
-        provider: group.id,
-        model: model.id,
-        ...model.reasoning?.defaultEffort === undefined
-          ? {}
-          : { reasoningEffort: model.reasoning.defaultEffort },
-      } satisfies ModelSelection,
+      selection: concreteSelection(state.current, group.id, model),
     }))), [groups])
   const showSearch = choices.length > 4
   const filteredGroups = useMemo(() => groups.map(group => ({
@@ -124,10 +121,11 @@ export function ModelSelect(
   const activeModelIndex = Math.min(highlightedIndex ?? Math.max(0, currentVisibleIndex), visibleModels.length - 1)
   const selectedIndex = state.current === null
     ? -1
-    : choices.findIndex(c => c.selection.provider === currentModel.provider && c.selection.model === currentModel.model)
+    : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
   const currentChoice = choices[selectedIndex]
-  const reasoning = currentChoice?.model.reasoning
-  const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
+  const auto = state.current?.provider === AUTO_SELECTION.provider && state.current.model === AUTO_SELECTION.model
+  const reasoning = auto ? undefined : currentChoice?.model.reasoning
+  const effectiveEffort = auto ? undefined : state.current?.reasoningEffort ?? reasoning?.defaultEffort
   const effortLabel = currentChoice === undefined
     ? undefined
     : reasoning === undefined
@@ -379,13 +377,12 @@ export function ModelSelect(
   }
 
   const chooseEffort = (effort: string | undefined): void => {
-    if (state.current?.kind !== 'model') return
+    if (state.current === null || auto) return
     if (effectiveEffort === effort) {
       closeAfterSelection()
       return
     }
-    const selection: ModelSelectionIntent = {
-      kind: 'model',
+    const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
@@ -393,10 +390,12 @@ export function ModelSelect(
     submit(selection)
   }
 
-  const waiting = currentChoice === undefined && state.status === 'loading'
+  const waiting = !auto && currentChoice === undefined && state.status === 'loading'
   const modelLabel = waiting
     ? t('trigger.loading')
-    : currentChoice?.model.name
+    : auto
+      ? t('auto.label')
+      : currentChoice?.model.name
       ?? t('trigger.fallback')
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
   const triggerAria = waiting

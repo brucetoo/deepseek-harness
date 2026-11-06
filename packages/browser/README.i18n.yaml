@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/browser/README.md
-README.md: 7bede6501d72c39c5014b69694596916051b77c3
-README.zh.md: 42b75ce1a79cebfc2c13588fd11e6e70a1158806
+/:
+  en: 35c16022ef68727c
+  zh: eb344876f996ac22
+/browser-visible-public-browser-capability:
+  en: 334fac1ee8ef41ec
+  zh: eea7afea227f92f9
+/browser-visible-public-browser-capability/summary:
+  en: 0dbf561815e91fea
+  zh: 5f3bb9d892b70516
+/browser-visible-public-browser-capability/table-of-contents:
+  en: 312a55f1ad6dce5b
+  zh: ed8dc145ae93ab42
+/browser-visible-public-browser-capability/packages:
+  en: 23b86c5d64c1a44e
+  zh: 4245516d9b4f880a
+/browser-visible-public-browser-capability/related-documentation:
+  en: e9ef45622cea61c0
+  zh: c71892119de9197d
+/browser-visible-public-browser-capability/dev-note:
+  en: b75c8458928b72b9
+  zh: b75c8458928b72b9

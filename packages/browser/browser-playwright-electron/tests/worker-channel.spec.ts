@@ -31,10 +31,10 @@ const createProcess = (): ProcessHarness => {
   }>()
   return {
     process: {
-      pid: 123,
       stdin,
       stdout,
       stderr,
+      control: undefined,
       collected: {},
       done: done.promise,
       terminate: () => {},

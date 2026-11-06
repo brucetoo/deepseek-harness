@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AssistantStreamRecord, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-llm-auto-router'
@@ -41,8 +42,9 @@ function validateEvents(events: readonly SessionEvent[], fail: InvariantFailure)
         || route.data.model !== event.data.fromModel) {
         fail('llm/auto-failover must match its prior route')
       }
-      if (events.slice(route.seq + 1, event.seq).some(candidate =>
-        candidate.type === 'assistant/chunk' && commits(candidate.data.chunk))) {
+      if (events.filter(candidate => candidate.seq > route.seq && candidate.seq < event.seq).some(candidate =>
+        (candidate.type === 'assistant/attempt' || candidate.type === 'assistant/message')
+        && candidate.data.stream.some(recordCommits))) {
         fail('llm/auto-failover must precede committed output')
       }
       failovers.add(event.data.attemptId)
@@ -50,19 +52,31 @@ function validateEvents(events: readonly SessionEvent[], fail: InvariantFailure)
   }
 }
 
-function commits(chunk: SessionEvent<'assistant/chunk'>['data']['chunk']): boolean {
+function commits(chunk: StreamChunk): boolean {
   return chunk.type === 'block-end'
     || chunk.type === 'tool-call-delta'
     || ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text.length > 0)
 }
 
+function recordCommits(record: AssistantStreamRecord): boolean {
+  switch (record.type) {
+    case 'text-chunks':
+    case 'reasoning-chunks':
+      return record.texts.some(text => text.length > 0)
+    case 'tool-call-chunks':
+      return true
+    case 'chunk':
+      return commits(record.chunk)
+  }
+}
+
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const session of ctx.sessions.list()) validateEvents(session.events, fail)
-  ctx.on('session/created', (session) => { validateEvents(session.events, fail) }, { global: true })
+  for (const session of ctx.sessions.list()) validateEvents(session.snapshotEvents(), fail)
+  ctx.on('session/created', (session) => { validateEvents(session.snapshotEvents(), fail) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
-    validateEvents([...session.events, event], fail)
+    validateEvents([...session.snapshotEvents(), event], fail)
   }, { global: true })
 }, { inject: ['sessions'] })
 

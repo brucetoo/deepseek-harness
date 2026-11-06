@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
@@ -58,12 +59,11 @@ describe('ModelHub adapter', () => {
       maxTokens: 500,
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'What is the result of 1+1?' }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'user' },
       })],
     })) assembler.push(chunk)
 
     expect(assembler.message({
-      kind: 'model',
       provider: ModelHub.MODELHUB_PROVIDER,
       model: 'gpt-5.6-sol',
     }).content).toEqual([{ type: 'text', text: 'hello' }])
@@ -143,12 +143,12 @@ describe('ModelHub adapter', () => {
     const provider = buildProvider(resolved)
     const [model] = provider.getModels()
     if (model === undefined) throw new Error('resolved provider has no model')
-    const events = provider.stream(model, {
+    const events = provider.stream(model, normalizeContext({
       messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
-    }, { apiKey: 'full-stream-key' })
+    }), { apiKey: 'full-stream-key' })
     for await (const _event of events) { /* drain */ }
     expect(new URL(server.requests[0]!.url, server.origin).pathname).toBe('/full-stream')
-    expect(() => provider.streamSimple(model, { messages: [] })).toThrow(/No API key/)
+    expect(() => provider.streamSimple(model, normalizeContext({ messages: [] }))).toThrow(/No API key/)
 
     const auth = provider.auth.apiKey
     if (auth === undefined) throw new Error('ModelHub provider has no API-key auth resolver')
@@ -156,13 +156,15 @@ describe('ModelHub adapter', () => {
       env: (_name: string) => Promise.resolve(undefined),
       fileExists: (_path: string) => Promise.resolve(false),
     }
-    await expect(auth.resolve({ ctx: authContext })).resolves.toEqual({
+    const signal = new AbortController().signal
+    await expect(auth.resolve({ ctx: authContext, signal })).resolves.toEqual({
       auth: {},
       source: ModelHub.MODELHUB_DISPLAY_NAME,
     })
     await expect(auth.resolve({
       ctx: authContext,
       credential: { type: 'api_key', key: 'stored-key' },
+      signal,
     })).resolves.toEqual({
       auth: { apiKey: 'stored-key' },
       source: ModelHub.MODELHUB_DISPLAY_NAME,
@@ -188,7 +190,7 @@ describe('ModelHub adapter', () => {
     }
     const readImageRequest = vi.fn((
       attachment: ImageAttachmentRef,
-      _policy: ImageRequestPolicy,
+      _policy: ImageRequestTarget,
       _signal?: AbortSignal,
     ): Promise<RequestImageAttachment> => Promise.resolve({
       variantId: ImageVariantId('modelhub-test-variant'),
@@ -226,7 +228,7 @@ describe('ModelHub adapter', () => {
 
       override readImageRequest(
         value: ImageAttachmentRef,
-        policy: ImageRequestPolicy,
+        policy: ImageRequestTarget,
         signal?: AbortSignal,
       ): Promise<RequestImageAttachment> {
         return readImageRequest(value, policy, signal)
@@ -240,13 +242,14 @@ describe('ModelHub adapter', () => {
       model: 'gpt-5.6-sol',
       messages: [createUserMessage({
         content: [{ type: 'image', attachment: ref }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'user' },
       })],
     })) assembler.push(chunk)
     expect(assembler.finish).toEqual({ kind: 'stop' })
     expect(readImageRequest).toHaveBeenCalledWith(ref, {
-      maxPixels: 2048 * 2048,
       maxBytes: 1024 * 1024,
+      width: 1,
+      height: 1,
     }, expect.any(AbortSignal))
   })
 

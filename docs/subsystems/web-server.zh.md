@@ -67,6 +67,8 @@ interface Config {
   host: string
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Environment variable containing the bearer token required by every socket-backed request. */
+  bearerTokenEnv?: string
   /**
    * Serve HTTPS with this certificate and key instead of plain HTTP. Both files
    * are read once, before the listener binds: an unreadable or empty file,

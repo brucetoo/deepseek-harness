@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-20-modelhub-exact-endpoint.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-modelhub-exact-endpoint.md
-2026-08-20-modelhub-exact-endpoint.md: 212cf8e91508e946650a1255fd1f7792ca5b8353
-2026-08-20-modelhub-exact-endpoint.zh.md: ffa398724b5d2326b430b40d6970a3d2837933b1
+/agent-note-optional-modelhub-provider-plugin:
+  en: d4b4af03e4ae3bc0
+  zh: 486ba93b3dd0aa35
+/agent-note-optional-modelhub-provider-plugin/problem:
+  en: 8ec185fce1347aa7
+  zh: d2bb1b4cb1f5e738
+/agent-note-optional-modelhub-provider-plugin/decision:
+  en: f9cb810da50901d5
+  zh: fe3ddf555073f3eb
+/agent-note-optional-modelhub-provider-plugin/alternatives-considered:
+  en: 1357b9be4e9b02fc
+  zh: b30341ceeb07b915
+/agent-note-optional-modelhub-provider-plugin/verification:
+  en: 3115f990ec3bea62
+  zh: ecca7a7ad1c49b5d
+/agent-note-optional-modelhub-provider-plugin/consequences:
+  en: 928aa64929b78693
+  zh: 5aabc5f7c94552ce

@@ -10,6 +10,7 @@
  */
 
 import { readFile } from 'node:fs/promises'
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse, Server } from 'node:http'
 import { createServer as createSecureServer } from 'node:https'
@@ -107,6 +108,8 @@ export interface Config {
   host: string
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Environment variable containing the bearer token required by every socket-backed request. */
+  bearerTokenEnv?: string
   /**
    * Serve HTTPS with this certificate and key instead of plain HTTP. Both files
    * are read once, before the listener binds: an unreadable or empty file,
@@ -365,6 +368,7 @@ export class WebServer extends Service {
       return value
     }).required(),
     port: z.natural().max(65535).required(),
+    bearerTokenEnv: z.string(),
     // An omitted object must not become `{}` and fail the required pair fields.
     tls: z.object({
       certFile: z.string().required(),
@@ -393,6 +397,7 @@ export class WebServer extends Service {
   private listenedPort: number | undefined
   private readonly gzip: NodeMiddleware | undefined
   private readonly tlsConfig: TlsConfig | undefined
+  private bearerAuthorization: Buffer | undefined
 
   constructor(ctx: Context, private config: Config) {
     super(ctx, 'webServer')
@@ -605,6 +610,17 @@ export class WebServer extends Service {
           socket.off('error', onError)
           this.upgradedSockets.delete(socket)
         })
+        if (!this.isAuthorized(req)) {
+          socket.end([
+            'HTTP/1.1 401 Unauthorized',
+            'WWW-Authenticate: Bearer',
+            'Content-Length: 0',
+            'Connection: close',
+            '',
+            '',
+          ].join('\r\n'))
+          return
+        }
         let route: WebUpgradeRoute | undefined
         try {
           /* v8 ignore next -- node:http always sets url on server requests. */
@@ -655,6 +671,15 @@ export class WebServer extends Service {
         await Promise.all([serverClosed, ...socketsClosed])
       }
     }, 'webServer.listen')
+  }
+
+  private isAuthorized(request: IncomingMessage): boolean {
+    const expected = this.bearerAuthorization
+    if (expected === undefined) return true
+    const value = request.headers.authorization
+    if (typeof value !== 'string') return false
+    const actual = Buffer.from(value)
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
   }
 
   /**

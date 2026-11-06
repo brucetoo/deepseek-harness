@@ -1,8 +1,23 @@
+---
+description: "为模型提供带审批的工具，以便在无凭据公共网页上执行可见交互。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-browser
 
 [English](README.md) | 中文
 
+## 概述
+
 [`ctx.browser`](../browser/README.zh.md) 能力的面向模型 Consumer。它注册七个工具，负责一次性审批文本、限制完整 UTF-8 观察结果、贡献仅限公共网页的操作指导，并且不导入具体浏览器 Provider。
+
+## 目录
+
+- 工具
+- 配置
+- 开发备注
+- 模型体验
+- 已知限制与暂缓事项
 
 ## 工具
 
@@ -25,6 +40,10 @@
 | `maxOutputBytes` | `64000` | 完整 UTF-8 观察结果上限 |
 | `timeoutMs` | `30000` | 协作式工具调用预算 |
 | `maxWaitMs` | `10000` | `browser_wait` 接受的最长时长 |
+
+## 开发备注
+
+无。
 
 ## 模型体验
 

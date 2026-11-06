@@ -49,6 +49,10 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/browser/browser': { kind: 'indirect', reason: 'The tool-browser consumer owns model-visible schemas, guidance, approvals, and results.' },
+  'packages/browser/browser-playwright-electron': { kind: 'indirect', reason: 'The tool-browser consumer owns model-visible browser observations and actions.' },
+  'packages/host/feishu-hitl-notifier': { kind: 'none', reason: 'Notifications observe admitted questions without changing model input or Session history.' },
+  'packages/runtime-diagnostics/invariants': { kind: 'none', reason: 'Invariant checks observe runtime relationships without changing model input or tool results.' },
   'packages/client/ui-context-menu': { kind: 'none', reason: 'Client menu presentation and contributed callbacks add no model input.' },
   'packages/client/ui-file-actions': { kind: 'none', reason: 'Explicit user file saves and clipboard operations add no model input.' },
   'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },

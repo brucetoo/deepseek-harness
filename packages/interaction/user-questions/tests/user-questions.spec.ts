@@ -65,7 +65,7 @@ describe('UserQuestionService', () => {
       release = resolve
     })
     const p = { ask: vi.fn(() => providerAnswer) }
-    ctx.userQuestions.registerProvider(p)
+    registerAnswerer(ctx, p)
     const request = { questions: [{ id: 'confirm', question: 'Proceed?' }] }
     const observed: AskUserQuestionRequest[] = []
     ctx.on('user-question/requested', (value) => {

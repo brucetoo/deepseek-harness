@@ -523,6 +523,49 @@ describe('prepared-route prompt admission', () => {
       .toEqual({ lastUsed: { provider: 'plain', model: 'next-model' }, next: { provider: 'plain', model: 'next-model' } })
   })
 
+  it('resolves a virtual selection before assembly and may replace its physical route on retry', async () => {
+    const capable = new MockAdapter([
+      () => { throw new LlmError('retry on another route', 'SERVER') },
+    ])
+    const h = await harness(capable)
+    const requested = { provider: 'auto', model: 'auto' }
+    h.agent.model.select(requested)
+    let failed = false
+    const prepared: Readonly<ModelSelection>[] = []
+    h.ctx.on('agent/resolve-model', async ({ selection }, next) => {
+      expect(selection).toEqual(requested)
+      await next()
+      return failed
+        ? { provider: 'plain', model: 'fallback' }
+        : { provider: 'capable', model: 'primary' }
+    })
+    h.ctx.on('system-prompt/assemble', (_assembly, context, next) => {
+      if (context.modelSelection !== undefined) prepared.push(context.modelSelection)
+      return next()
+    })
+    h.ctx.on('agent/pre-step', ({ modelSelection }, next) => {
+      prepared.push(modelSelection)
+      return next()
+    })
+    h.ctx.on('agent/request-error', () => {
+      failed = true
+      return Promise.resolve({ kind: 'retry' as const })
+    })
+
+    await send(h.agent, 'route automatically')
+
+    expect(prepared).toEqual([
+      { provider: 'capable', model: 'primary' },
+      { provider: 'capable', model: 'primary' },
+    ])
+    expect(h.capable.requests).toHaveLength(1)
+    expect(h.capable.requests[0]).toMatchObject({ provider: 'capable', model: 'primary' })
+    expect(h.plain.requests).toHaveLength(1)
+    expect(h.plain.requests[0]).toMatchObject({ provider: 'plain', model: 'fallback' })
+    expect(h.ctx.sessionProjections.snapshot(h.agent.session).values.modelSelection)
+      .toEqual({ lastUsed: { provider: 'plain', model: 'fallback' }, next: requested })
+  })
+
   it('keeps generic config changes and concurrent selection on the same prepared route', async () => {
     const h = await harness()
     await send(h.agent, 'first')

@@ -11,13 +11,13 @@ import type {
   AssistantMessage,
   AssistantMessageEvent,
   AssistantMessageEventStream,
-  Context,
   Model,
   ModelCost,
   Provider,
   ProviderStreams,
   SimpleStreamOptions,
   StreamOptions,
+  TranscriptContext,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import type { ResolvedModelHubConfig } from './config.ts'
@@ -97,11 +97,11 @@ function exactRequest<T extends StreamOptions | SimpleStreamOptions>(
 function modelHubApi(endpoint: string): ProviderStreams {
   const delegate = openAICompletionsApi()
   return {
-    stream(model: Model<Api>, context: Context, options?: StreamOptions): AssistantMessageEventStream {
+    stream(model: Model<Api>, context: TranscriptContext, options?: StreamOptions): AssistantMessageEventStream {
       const request = exactRequest(endpoint, model, options)
       return sanitizedStream(delegate.stream(request.model, context, request.options), request.credential)
     },
-    streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
+    streamSimple(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream {
       const request = exactRequest(endpoint, model, options)
       return sanitizedStream(delegate.streamSimple(request.model, context, request.options), request.credential)
     },

@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FeishuCardFace } from './controller.ts'
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import css from './FeishuSettingsCard.module.css'
 
-export type FeishuSettingsCardProps = PropsRuntime<'settings.plugin.item'> & InjectFace<FeishuCardFace>
+export type FeishuSettingsCardProps = PropsRuntime<'plugins.item'> & InjectFace<FeishuCardFace>
 const TYPES = [['email', 'Email'], ['open_id', 'Open ID'], ['user_id', 'User ID'], ['chat_id', 'Group chat ID']] as const
 
 /** Render the Feishu notifier configuration card. */

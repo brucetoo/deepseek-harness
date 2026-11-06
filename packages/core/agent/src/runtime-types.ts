@@ -349,6 +349,24 @@ declare module '@deepseek-ai/cordis' {
      */
     'agent/pre-step'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; turn: number; step: number; signal: AbortSignal; modelSelection: Readonly<ModelSelection> }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>
     /**
+     * Resolve a recorded or configured model selection to the concrete route
+     * used for one step preparation or request attempt. Listeners call
+     * `next()` to preserve or wrap the current proposal. The loop invokes this
+     * before tool and system-prompt assembly, then again before each request
+     * attempt so recovery may replace a failed physical route. The returned
+     * selection affects the request header but does not replace the Agent's
+     * durable selection.
+     * @param payload.agent - the agent making the model call.
+     * @param payload.selection - requested selection captured for the step.
+     * @param payload.phase - preparation previews a route before assembly; attempt commits one for dispatch.
+     * @param payload.turn - the open turn number.
+     * @param payload.step - the step whose route is being resolved.
+     * @param payload.signal - the current turn's cancellation signal.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode waterfall
+     */
+    'agent/resolve-model'(this: Scoped<Agent>, payload: { agent: Agent; selection: Readonly<ModelSelection>; phase: 'preparation' | 'attempt'; turn: number; step: number; signal: AbortSignal }, next: () => Promise<ModelSelection>): Promise<ModelSelection>
+    /**
      * Replace the frozen call configuration. `await next()` yields the config
      * the machine would use (the step's model selection with agent options on
      * the first request, the logged header's controls afterwards); a

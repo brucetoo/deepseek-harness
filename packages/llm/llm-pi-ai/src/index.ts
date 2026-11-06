@@ -78,7 +78,13 @@ import type { PiAiRequestHeaderContext } from './types.ts'
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
 export type { PiAiRequestHeaderContext } from './types.ts'
-export { Config } from './config.ts'
+export {
+  Config,
+  DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  DEFAULT_MAX_REQUEST_IMAGES,
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+} from './config.ts'
 export type {
   Options,
   PiAiCompatProfile,

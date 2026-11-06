@@ -1,8 +1,24 @@
+---
+description: "Register package-owned runtime relationship checks and select them by package-name filters."
+kind: "package-reference"
+---
+
 # dsh-invariants
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Configurable registry service for package-owned runtime invariant checks. The root plugin registers `ctx.invariants`; it contains no product checks or product-package imports. Every workspace package publishes a `./invariant` companion that registers its exact npm package name.
+
+## Table of Contents
+
+- Service: InvariantRegistry
+- Package companions
+- Composition
+- Dev Note
+- Model Experience
+- Known Limitations and Deferred Work
 
 ## Service: `InvariantRegistry` (`ctx.invariants`)
 
@@ -54,7 +70,6 @@ The root entrypoint of each owner remains independent of diagnostics. Loading th
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 
 declare const ctx: Context
 
@@ -63,12 +78,15 @@ ctx.plugin(InvariantRegistry, {
   package_allowlist: ['^@deepseek-ai/dsh-'],
   package_blocklist: ['^@deepseek-ai/dsh-agent-loop$'],
 })
-ctx.plugin(SessionInvariant)
 ```
 
 The standard agent composition mounts the service and its four core stateful companions. Custom compositions explicitly add companions for other loaded packages whose contracts they want checked; filters can disable or select registrations without changing package entrypoints.
 
 Every ordinary Vitest topology mounts an explicitly enabled service and the current test package's companion. Focused suites cover valid and invalid observations for executable companions, while one exhaustive topology mounts all companions to prove registration and disposal wiring.
+
+## Dev Note
+
+None.
 
 ## Model Experience
 

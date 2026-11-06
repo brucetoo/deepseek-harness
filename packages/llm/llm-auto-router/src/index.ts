@@ -5,21 +5,19 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  assembledModelSelectionIntent,
   type Agent,
-  type AutoModelSelection,
   type ModelSelection,
   type RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import type { ModelModality } from '@deepseek-ai/dsh-llm'
-import { isAgentLoopRequest, type LlmCallConfig, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { isAgentLoopRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import z from '@deepseek-ai/schemastery'
 import { Attempts } from './attempts.ts'
 import { resolveConfig } from './config.ts'
 import { AutoModelRouter } from './policy.ts'
 import { Routing } from './routing.ts'
 import { observeAttemptStream, recoverAttempt } from './stream.ts'
-import type { ScoringWeights } from './types.ts'
+import type { AutoModelSelection, ScoringWeights } from './types.ts'
 
 /** Optional automatic-routing operations consumed by Host APIs. */
 export interface LlmAutoRouterService {
@@ -134,7 +132,6 @@ export { resolveConfig }
 export { RouteKey } from './brand.ts'
 export { AutoModelRouter, AutoRoutingError } from './policy.ts'
 export { buildCandidateCatalog } from './catalog.ts'
-export { foldModelSelectionIntent } from './selection.ts'
 export type * from './types.ts'
 
 /** Cordis function-plugin name. */
@@ -220,12 +217,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     preflight: input => active.routing.preflight(input),
   })
 
-  const disposeRequest = ctx.on('agent/request', async ({ agent, turn, step, signal }, next) => {
-    const proposal = await next()
+  const disposeResolver = ctx.on('agent/resolve-model', async (
+    { agent, turn, step, signal, phase },
+    next,
+  ) => {
+    const selection = await next()
     return active.routing.resolve({
-      agent, turn, step, signal,
-      intent: assembledModelSelectionIntent(agent),
-      proposal,
+      agent, turn, step, signal, phase, selection,
     })
   }, { prepend: true })
   const disposeStream = ctx.on('llm/stream', (options, next): AsyncIterable<StreamChunk> => {
@@ -263,7 +261,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       || matching.route.provider !== provider
       || header?.config.provider !== matching.route.provider
       || header.config.model !== matching.route.model) return next()
-    const proposal: LlmCallConfig = { provider: matching.route.provider, model: matching.route.model }
+    const selection: ModelSelection = {
+      provider: active.policy.virtualProvider,
+      model: matching.pool === 'default' ? active.policy.virtualModel : matching.pool,
+    }
     return recoverAttempt({
       agent,
       attempt: matching,
@@ -271,9 +272,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       maxFailovers: active.policy.maxFailoversPerStep,
       attempts: active.attempts,
       hasAlternative: () => active.routing.canFailover({
-        agent, turn, step, signal,
-        intent: assembledModelSelectionIntent(agent),
-        proposal,
+        agent, turn, step, signal, phase: 'attempt', selection,
       }),
       appendFailover: () => agent.session.append('llm/auto-failover', {
         attemptId: matching.id,
@@ -298,7 +297,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
 
   ctx.effect(() => () => {
-    disposeRequest()
+    disposeResolver()
     disposeStream()
     disposeError()
     disposeUpdated()

@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-electron-desktop-application.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-electron-desktop-application.md
-2026-09-15-electron-desktop-application.md: 285805e22b216d0c61ab9435c1989f47841c1d49
-2026-09-15-electron-desktop-application.zh.md: 2dc98124848d2783e0aeef1307e1daa0b8e2bf72
+/agent-note-electron-desktop-application-with-an-authenticated-local-host:
+  en: ca25a34f0f0d1d2c
+  zh: 5408f17a4049dc17
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/problem:
+  en: 795245846eafde6e
+  zh: d2e83bfe97e39b55
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/decision:
+  en: ebda5cda3dcff45a
+  zh: da4c2bbc34a3a413
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/packaged-runtime:
+  en: 1709aa9c9ff3f1ea
+  zh: 18ee21cd6d50762c
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/verification:
+  en: a04eeb09a06fad17
+  zh: ea0e218ac2b6c215
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/alternatives-considered:
+  en: ec83561f0d4a688a
+  zh: ae4db9acfdf711f6
+/agent-note-electron-desktop-application-with-an-authenticated-local-host/consequences:
+  en: 5439d42566f6acff
+  zh: 5ebdca77ef920702

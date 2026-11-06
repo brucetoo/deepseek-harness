@@ -2,9 +2,9 @@
 
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { Service, type Context, type Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { AskUserQuestionItem, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-session-title'
@@ -18,7 +18,7 @@ export const name = 'feishu-hitl-notifier'
 export const inject = ['userQuestions', 'sessionTitle', 'subprocess']
 
 /** Settings namespace owned by the Feishu HITL notifier. */
-export const FEISHU_HITL_SETTINGS_NAMESPACE = settingsNamespace('feishu-hitl-notifier')
+export const FEISHU_HITL_SETTINGS_NAMESPACE = 'feishu-hitl-notifier'
 
 /** Deployment-owned `feishu-cli` process settings. */
 export interface CliConfig {
@@ -32,32 +32,24 @@ export interface CliConfig {
 
 /** Loader configuration for Feishu user-question notifications. */
 export interface Config {
-  /** Whether automatic question notifications are sent. */
-  enabled?: boolean
-  /** Absolute DSH Web URL used for session return links. */
-  webBaseUrl: string
-  /** Feishu destinations that receive each notification. */
-  recipients: Recipient[]
-  /** Maximum Unicode code points retained from the first question. */
-  summaryMaxChars?: number
-  /** Whether an available session title is included in the card. */
-  includeSessionTitle?: boolean
+  /** User-editable notification configuration. */
+  configuration: Volatile<NotifierConfiguration>
   /** Deployment-owned executable, credential path, and timeout. */
   cli?: CliConfig
 }
 
 /** Complete notifier settings persisted and replaced atomically. */
 export interface NotifierConfiguration {
-  enabled: boolean
-  webBaseUrl: string
-  recipients: Recipient[]
-  summaryMaxChars: number
-  includeSessionTitle: boolean
-}
-
-/** Settings document owned by the notifier namespace. */
-export interface NotifierSettings {
-  configuration: NotifierConfiguration
+  /** Whether admitted user questions send notification cards. */
+  readonly enabled: boolean
+  /** Absolute HTTP(S) application URL used for session links. */
+  readonly webBaseUrl: string
+  /** Feishu destinations that receive each notification. */
+  readonly recipients: readonly Recipient[]
+  /** Maximum Unicode codepoints included in the question summary. */
+  readonly summaryMaxChars: number
+  /** Whether an available session title appears in the card. */
+  readonly includeSessionTitle: boolean
 }
 
 const recipientSchema = z.object({
@@ -65,7 +57,7 @@ const recipientSchema = z.object({
   id: z.string().required(),
 })
 
-const configurationSchema: z<NotifierConfiguration> = z.object({
+const configurationSchema = z.object({
   enabled: z.boolean().default(true),
   webBaseUrl: z.string().required(),
   recipients: z.array(recipientSchema).required(),
@@ -73,14 +65,8 @@ const configurationSchema: z<NotifierConfiguration> = z.object({
   includeSessionTitle: z.boolean().default(true),
 })
 
-const settingsSchema: z<NotifierSettings> = z.object({ configuration: configurationSchema.required() })
-
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  webBaseUrl: z.string().required(),
-  recipients: z.array(recipientSchema).required(),
-  summaryMaxChars: z.number().default(240),
-  includeSessionTitle: z.boolean().default(true),
+export const Config = z.object({
+  configuration: configurationSchema.required().volatile(),
   cli: z.object({
     executable: z.string().default('feishu-cli'),
     configPath: z.string().default('~/.feishu-cli/config.yaml'),
@@ -159,7 +145,7 @@ const validateConfiguration = (value: NotifierConfiguration): EffectiveConfigura
   return Object.freeze({
     enabled: value.enabled,
     webBaseUrl,
-    recipients: Object.freeze(recipients.map(recipient => Object.freeze(recipient))) as Recipient[],
+    recipients: Object.freeze(recipients.map(recipient => Object.freeze(recipient))),
     summaryMaxChars: value.summaryMaxChars,
     includeSessionTitle: value.includeSessionTitle,
   })
@@ -219,7 +205,7 @@ export class FeishuHitlNotifier extends TypertRemoteService {
   static Config = Config
   static inject = inject
 
-  private source: () => NotifierSettings
+  private source: () => NotifierConfiguration
   private readonly deployment: DeploymentConfiguration
   private readonly executable: Promise<string>
   private readonly controller = new AbortController()
@@ -229,25 +215,16 @@ export class FeishuHitlNotifier extends TypertRemoteService {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'feishuHitlNotifier')
-    const entry: NotifierSettings = { configuration: {
-      enabled: config.enabled ?? true,
-      webBaseUrl: config.webBaseUrl,
-      recipients: config.recipients,
-      summaryMaxChars: config.summaryMaxChars ?? 240,
-      includeSessionTitle: config.includeSessionTitle ?? true,
-    } }
-    validateConfiguration(entry.configuration)
-    this.source = () => entry
+    validateConfiguration(config.configuration.get())
+    this.source = () => config.configuration.get()
     this.deployment = {
       executable: config.cli?.executable ?? 'feishu-cli',
       configPath: resolveHomePath(config.cli?.configPath ?? '~/.feishu-cli/config.yaml'),
       timeoutMs: positiveInteger('cli.timeoutMs', config.cli?.timeoutMs ?? 10_000),
     }
     this.executable = ctx.subprocess.resolveExecutable(this.deployment.executable)
-    installSettingsSection(ctx, FEISHU_HITL_SETTINGS_NAMESPACE, settingsSchema, entry, {
-      setSource: (current) => { this.source = current },
-      onChange: () => {},
-      validate: (value) => { validateConfiguration(value.configuration) },
+    ctx.inject(['settings'], (child) => {
+      child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
     })
     ctx.on('user-question/requested', (request) => { this.onQuestion(request) })
   }
@@ -262,7 +239,7 @@ export class FeishuHitlNotifier extends TypertRemoteService {
   }
 
   private snapshot(): EffectiveConfiguration {
-    return validateConfiguration(structuredClone(this.source().configuration))
+    return validateConfiguration(structuredClone(this.source()))
   }
 
   private track<T>(task: Promise<T>): Promise<T> {

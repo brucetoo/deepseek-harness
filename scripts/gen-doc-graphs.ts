@@ -643,6 +643,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Observes admitted user questions, sends bounded cards through the local feishu-cli, and exposes saved-recipient test delivery through its Remote namespace.',
   },
   {
+    key: 'invariants',
+    pkg: 'invariants',
+    title: 'Runtime invariant registry',
+    mode: 'core',
+    note: 'Registers package-owned runtime checks, applies package filters, and installs each enabled contribution in an isolated child fiber.',
+  },
+  {
     key: 'planMode',
     pkg: 'plan-mode',
     title: 'Plan collaboration state',

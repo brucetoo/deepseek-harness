@@ -76,6 +76,10 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     return Promise.resolve(command)
   }
 
+  override terminalEnvironment(): Promise<{ platform: 'posix' }> {
+    return Promise.resolve({ platform: 'posix' })
+  }
+
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     return this.spawnImplementation(spec)
   }
@@ -206,10 +210,10 @@ const createHarness = (): Harness => {
         stdout.write('dsh-browser-worker: ready\n')
       })
       return {
-        pid: 123 + spawnCount,
         stdin: processStdin,
         stdout,
         stderr,
+        control: undefined,
         collected: {},
         done: exit.promise,
         terminate: () => {
@@ -608,10 +612,10 @@ describe('PlaywrightElectronBrowserRuntime launch failures', () => {
             })
             let exited = false
             return {
-              pid: 124,
               stdin,
               stdout,
               stderr,
+              control: undefined,
               collected: {},
               done: new Promise(() => {}),
               terminate: () => {

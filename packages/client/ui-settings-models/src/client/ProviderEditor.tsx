@@ -367,6 +367,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const endpointField = family === 'modelhub' ? 'endpoint' : 'baseURL'
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
     const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
+      ?? schema.getPath(fallback, ['defaultMaxTokens'])
     const defaultInput = schema.getPath(fallback, ['defaultInput'])
     const baseURL = stringAt(fallback, 'baseURL') ?? props.defaultBaseURL
     const endpointEnv = props.baseURLEnv ?? []

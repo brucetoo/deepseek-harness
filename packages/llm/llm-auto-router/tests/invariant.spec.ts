@@ -56,8 +56,14 @@ describe('llm-auto-router invariant companion', () => {
   it('rejects failover after committed output', async () => {
     const { session } = await setup()
     session.append('llm/auto-route', route)
-    session.append('assistant/chunk', {
-      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'committed' },
+    session.append('assistant/attempt', {
+      turn: 1,
+      step: 1,
+      stream: [{
+        type: 'chunk',
+        time: 0,
+        chunk: { type: 'text-delta', index: 0, text: 'committed' },
+      }],
     })
     expect(() => session.append('llm/auto-failover', {
       attemptId: route.attemptId, turn: 1, step: 1, attempt: 1,

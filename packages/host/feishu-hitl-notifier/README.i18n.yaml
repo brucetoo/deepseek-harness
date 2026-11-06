@@ -1,6 +1,43 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/host/feishu-hitl-notifier/README.md
-README.md: c8e898a6da940745185ed149750f7dac6d65688a
-README.zh.md: a93e576855a46d34f47d884e9304bf5a82b7a46c
+/:
+  en: 2443d38150a31308
+  zh: c964285200680149
+/deepseek-ai-dsh-feishu-hitl-notifier:
+  en: 960910d9ea5a2c9a
+  zh: 2ee9a1bc1b2874ab
+/deepseek-ai-dsh-feishu-hitl-notifier/summary:
+  en: 301475f480d3b134
+  zh: 60be020dcf8ad855
+/deepseek-ai-dsh-feishu-hitl-notifier/table-of-contents:
+  en: b77eef7343df5f6d
+  zh: b93b3d532e7485c3
+/deepseek-ai-dsh-feishu-hitl-notifier/requirements:
+  en: 27a5d31e4d9fd120
+  zh: 3ea6060088a1256f
+/deepseek-ai-dsh-feishu-hitl-notifier/add-the-plugin-to-a-profile:
+  en: be72567e4a6607bb
+  zh: 3b199abdf4e2c8a8
+/deepseek-ai-dsh-feishu-hitl-notifier/configuration:
+  en: d4de8cd4be780ea2
+  zh: 3d3bdd03f6883ff8
+/deepseek-ai-dsh-feishu-hitl-notifier/settings-in-dsh-web:
+  en: 75cce0b60fc14cfc
+  zh: 3ac1bc79d7ae8847
+/deepseek-ai-dsh-feishu-hitl-notifier/notification-behavior:
+  en: 3b4e64b105943d22
+  zh: 180c42aad29ead31
+/deepseek-ai-dsh-feishu-hitl-notifier/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269
+/deepseek-ai-dsh-feishu-hitl-notifier/model-experience:
+  en: a6b061a34a9ae353
+  zh: 06ae7acf04c3154c
+/deepseek-ai-dsh-feishu-hitl-notifier/model-experience/kv-cache-effect:
+  en: 50b82e828fbb9c45
+  zh: 011f463f0ade41b5
+/deepseek-ai-dsh-feishu-hitl-notifier/known-limitations-and-deferred-work:
+  en: 24728679c263bf4f
+  zh: 919f0c285cdfa8a2

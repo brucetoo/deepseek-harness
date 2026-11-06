@@ -9,7 +9,8 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import SessionStore, { type Session } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionTitleService from '@deepseek-ai/dsh-session-title'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -22,13 +23,17 @@ class LoaderSubprocess extends SubprocessRuntime {
     return `/loader-bin/${command}`
   }
 
+  terminalEnvironment(): Promise<{ platform: 'posix' }> {
+    return Promise.resolve({ platform: 'posix' })
+  }
+
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.specs.push(spec)
     return {
-      pid: 1,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
+      control: undefined,
       collected: {
         stdout: { readFrom: () => ({ text: '{"message_id":"om_loader"}', nextOffset: 26, lossy: false }) },
         stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
@@ -59,6 +64,7 @@ async function loadComposition(): Promise<Context> {
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-session'",
+    "- name: '@deepseek-ai/dsh-session-projection'",
     "- name: '@deepseek-ai/dsh-agent'",
     "- name: '@deepseek-ai/dsh-session-title'",
     '  config:',
@@ -69,11 +75,14 @@ async function loadComposition(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-subprocess'",
     "- name: '@deepseek-ai/dsh-feishu-hitl-notifier'",
     '  config:',
-    '    enabled: true',
-    "    webBaseUrl: 'https://dsh.example.test/'",
-    '    recipients:',
-    "      - type: 'chat_id'",
-    "        id: 'oc_oncall'",
+    '    configuration:',
+    '      enabled: true',
+    "      webBaseUrl: 'https://dsh.example.test/'",
+    '      recipients:',
+    "        - type: 'chat_id'",
+    "          id: 'oc_oncall'",
+    '      summaryMaxChars: 240',
+    '      includeSessionTitle: true',
     '',
   ].join('\n'))
 
@@ -83,6 +92,7 @@ async function loadComposition(): Promise<Context> {
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-session', SessionStore],
+    ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-agent', AgentRegistry],
     ['@deepseek-ai/dsh-session-title', SessionTitleService],
     ['@deepseek-ai/dsh-user-questions', UserQuestionService],
@@ -114,12 +124,19 @@ describe('Feishu notifier Loader composition', () => {
     expect(FeishuHitlNotifier.default).toBe(FeishuHitlNotifier.FeishuHitlNotifier)
     expect(ctx.feishuHitlNotifier).toBeInstanceOf(FeishuHitlNotifier.FeishuHitlNotifier)
 
-    ctx.userQuestions.registerProvider({ ask: async () => ({ answers: [] }) })
+    ctx.on('user-questions/request', () => Promise.resolve({ answers: [] }))
+    const id = SessionId('loader-session')
     const agent = {
-      id: 'loader-session',
-      session: { id: 'loader-session', events: [] } as unknown as Session,
-    } as unknown as Agent
-    ctx.agents.enter(agent, undefined)
+      id,
+      session: Session.create(id, undefined, {
+        version: SESSION_FORMAT_VERSION,
+        id,
+        createdAt: 0,
+        isSeeded: false,
+        delegationDepth: 0,
+      }),
+    } as Agent
+    ctx.agents.enter(agent)
     await ctx.userQuestions.ask({
       agent,
       questions: [{ id: 'confirm', question: 'Continue through Loader?' }],
