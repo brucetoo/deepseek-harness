@@ -2873,6 +2873,21 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
+  it('uses development runtime resources from the registered macOS bundle', async () => {
+    harness.app.isPackaged = true
+    vi.stubEnv('DSH_DESKTOP_DEV_APP', '1')
+    vi.stubEnv('DSH_DESKTOP_DSH_DIR', undefined)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const project = join(harness.app.getAppPath(), '.desktop-build', 'development', 'project')
+    expect(harness.hosts[0]).toMatchObject({ node: process.execPath, runtime: project,
+      primaryRuntime: 'test-primary-runtime', profile: 'desktop-test-profile' })
+    harness.hosts[0]!.ready.resolve()
+    await harness.navigated.promise
+  })
+
   it('fails an unpackaged launch that receives no primary runtime directory', async () => {
     harness.app.isPackaged = false
     vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', undefined)

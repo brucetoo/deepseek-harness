@@ -206,8 +206,12 @@ interface RuntimeResources {
   readonly dsh: string
 }
 
+function isDevelopmentLaunch(): boolean {
+  return !app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1'
+}
+
 function runtimeResources(): RuntimeResources {
-  const development = !app.isPackaged
+  const development = isDevelopmentLaunch()
   const node = process.execPath
   const nodeBin = development ? join(app.getAppPath(), 'scripts', 'node-bin') : join(process.resourcesPath, 'runtime', 'bin')
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
@@ -377,7 +381,7 @@ async function main(): Promise<void> {
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
-  const development = !app.isPackaged
+  const development = isDevelopmentLaunch()
   const primaryRuntime = development
     ? developmentPrimaryRuntime()
     : join(process.resourcesPath, 'runtime', 'primary-runtime')
