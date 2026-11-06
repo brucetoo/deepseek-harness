@@ -1,22 +1,19 @@
 /**
- * Safe HTTP(S) retrieval for `ctx.web`: validates URLs, follows only same-origin redirects,
+ * Bounded HTTP(S) retrieval for `ctx.web`: validates URLs, follows only same-origin redirects,
  * enforces time and size limits, classifies and decodes text, and leaves presentation to
- * `@deepseek-ai/dsh-tool-web`. Requests carry no browser cookies or ambient credentials.
- *
- * Private-network and SSRF protection is not implemented; do not enable this provider where
- * it can reach sensitive internal targets.
+ * `@deepseek-ai/dsh-tool-web`. Requests carry no browser cookies
+ * or ambient credentials.
  * @module @deepseek-ai/dsh-web-fetch-http/provider
  */
 
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import type { Response } from 'undici'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
 export interface HttpFetchLimits {
-  /** Maximum accepted request URL length. */
-  maxUrlLength: number
   /** Maximum response body size in bytes (read is aborted past this). */
   maxResponseBytes: number
   /** Maximum decoded body length in characters (truncated past this). */
@@ -32,13 +29,25 @@ export interface HttpFetchLimits {
 /** Stable id this provider registers under. */
 export const LOCAL_FETCH_PROVIDER_ID = 'http'
 
-/** The anonymous public HTTP(S) fetch provider. */
+/** The anonymous HTTP(S) fetch provider. */
 export class HttpFetchProvider implements WebFetchProvider {
   readonly id = LOCAL_FETCH_PROVIDER_ID
+  /** Picker description: what this provider suits and what it costs or cannot do. */
+  readonly description: NonNullable<WebFetchProvider['description']> = {
+    en: 'Fetches URLs directly from this machine with no API key or charges, including intranet and loopback addresses. Decodes text, HTML, JSON, and XML only; no JavaScript, cookies, or PDFs. You can also try DeepSeek Fetch API.',
+    zh: '本机直接请求，免 API Key 与计费，可访问内网和本机。仅解码 HTML、JSON 等文本，不执行 JavaScript、不带登录态，不支持 PDF；也可以试试 DeepSeek Fetch API',
+    ja: 'このマシンから URL を直接取得し、API キーや料金は不要で、イントラネットやループバックのアドレスにもアクセスできます。テキスト、HTML、JSON、XML のみをデコードし、JavaScript、Cookie、PDF には対応しません。DeepSeek Fetch API も試せます。',
+    es: 'Obtiene las URL directamente desde este equipo, sin clave de API ni cargos, incluidas direcciones de la intranet y de bucle invertido. Solo decodifica texto, HTML, JSON y XML; sin JavaScript, cookies ni PDF. También puede probar DeepSeek Fetch API.',
+    fr: 'Récupère les URL directement depuis cette machine, sans clé API ni frais, y compris les adresses intranet et de bouclage. Ne décode que le texte, le HTML, le JSON et le XML ; ni JavaScript, ni cookies, ni PDF. Vous pouvez aussi essayer DeepSeek Fetch API.',
+    de: 'Ruft URLs direkt von diesem Rechner ab, ohne API-Schlüssel oder Kosten, auch Intranet- und Loopback-Adressen. Dekodiert nur Text, HTML, JSON und XML; kein JavaScript, keine Cookies, keine PDFs. Sie können auch DeepSeek Fetch API ausprobieren.',
+    ru: 'Загружает URL напрямую с этого компьютера без ключа API и оплаты, включая адреса интрасети и loopback. Декодирует только текст, HTML, JSON и XML; без JavaScript, cookie и PDF. Можно также попробовать DeepSeek Fetch API.',
+    pt: 'Obtém URLs diretamente desta máquina, sem chave de API nem cobranças, incluindo endereços da intranet e de loopback. Decodifica apenas texto, HTML, JSON e XML; sem JavaScript, cookies ou PDFs. Você também pode experimentar a DeepSeek Fetch API.',
+  }
 
+  /** @param limits - resolved transport and response limits. */
   constructor(private readonly limits: HttpFetchLimits) {}
 
-  /** No credentials to check — an anonymous public fetcher is always usable. */
+  /** No credentials to check — an anonymous fetcher is always usable. */
   available(): boolean {
     return true
   }
@@ -54,14 +63,13 @@ export class HttpFetchProvider implements WebFetchProvider {
 
   /** Follow same-origin redirects up to the hop cap, then read the final response. */
   private async followAndRead(initialUrl: string, signal: AbortSignal): Promise<WebFetchResult> {
-    let currentUrl = validateFetchUrl(initialUrl, this.limits.maxUrlLength)
+    let currentUrl = validateFetchUrl(initialUrl)
     let redirectsFollowed = 0
 
     for (;;) {
       const response = await this.requestOnce(currentUrl, signal)
-
       if (isRedirectStatus(response.status)) {
-        // Enforce the redirect budget before resolving or validating the next hop.
+        // Enforce the redirect budget before validating the next hop.
         if (redirectsFollowed >= this.limits.maxRedirects) {
           await response.body?.cancel()
           throw new WebError(`exceeded the maximum of ${this.limits.maxRedirects} redirects`, 'WEB_REDIRECT_BLOCKED')
@@ -79,7 +87,7 @@ export class HttpFetchProvider implements WebFetchProvider {
         // that validateFetchUrl would reject.
         let validatedTarget: URL
         try {
-          validatedTarget = validateFetchUrl(target.toString(), this.limits.maxUrlLength)
+          validatedTarget = validateFetchUrl(target.toString())
           if (!isSameOrigin(validatedTarget, currentUrl)) {
             throw new WebError(
               `cross-origin redirect to ${validatedTarget.origin} is not followed automatically; retry against that URL directly`,
@@ -100,14 +108,16 @@ export class HttpFetchProvider implements WebFetchProvider {
     }
   }
 
+  /** Send one GET through the process-wide dispatcher, which applies the installed proxy policy. */
   private async requestOnce(url: URL, signal: AbortSignal): Promise<Response> {
+    const headers = {
+      'user-agent': this.limits.userAgent,
+      'accept': 'text/html,application/xhtml+xml,text/*;q=0.9,application/json;q=0.8',
+    }
     try {
-      return await fetch(url, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: { 'user-agent': this.limits.userAgent, 'accept': 'text/html,application/xhtml+xml,text/*;q=0.9,application/json;q=0.8' },
-        signal,
-      })
+      // Keep the Node-only transport out of browser-worker startup; a real request loads it here.
+      const { fetch } = await import('undici')
+      return await fetch(url, { method: 'GET', redirect: 'manual', headers, signal })
     } catch (error: unknown) {
       throw translateAbortOrNetwork(error, signal)
     }
@@ -122,9 +132,7 @@ export class HttpFetchProvider implements WebFetchProvider {
       throw new WebError(`unsupported content type "${contentType ?? 'unknown'}"`, 'WEB_UNSUPPORTED_CONTENT_TYPE')
     }
 
-    // Resolve the decoder BEFORE reading the body so an unsupported charset
-    // fails without consuming the stream — but cancel the body on that failure
-    // so the socket does not leak (matching the unsupported-content-type path).
+    // Reject unsupported declarations before reading, releasing the response stream.
     let decoder: TextDecoder
     try {
       decoder = decoderForCharset(parseCharset(contentType))
@@ -133,7 +141,17 @@ export class HttpFetchProvider implements WebFetchProvider {
       throw error
     }
     const { bytes, truncatedByBytes } = await this.readCapped(response, signal)
-    const decoded = decoder.decode(bytes)
+    let decoded: string
+    try {
+      // Only a real byte-cap truncation permits an incomplete UTF-8 suffix.
+      decoded = decoder.decode(bytes, { stream: decoder.fatal && truncatedByBytes })
+    } catch (error: unknown) {
+      throw new WebError(
+        'response body is not valid UTF-8 for the malformed charset declaration',
+        'WEB_UNSUPPORTED_CONTENT_TYPE',
+        { cause: error },
+      )
+    }
     const truncatedByChars = decoded.length > this.limits.maxBodyChars
     const content = truncatedByChars ? decoded.slice(0, this.limits.maxBodyChars) : decoded
     const body: WebFetchBody = kind === 'html' ? { kind: 'html', content } : { kind: 'text', content }
@@ -168,7 +186,8 @@ export class HttpFetchProvider implements WebFetchProvider {
     const chunks: Uint8Array[] = []
     let total = 0
     let truncatedByBytes = false
-    const reader = response.body.getReader()
+    // Undici exposes response chunks as `any`; Fetch guarantees body chunks are Uint8Array.
+    const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>
     try {
       for (;;) {
         const { done, value } = await reader.read()

@@ -1,6 +1,6 @@
 /** Staged browser controller for the Feishu notifier's atomic configuration. */
-import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Recipient identifier kinds accepted by the notifier settings form. */
 export type RecipientType = 'email' | 'open_id' | 'user_id' | 'chat_id'
@@ -51,12 +51,9 @@ export interface FeishuCardFace {
   canTest(key: string): { allowed: boolean; reason?: string; warning?: boolean }
 }
 
-type SettingsApi = Pick<IApiClient, 'settings'>
-type DescribeFace = { acceptView(view: SettingsNamespaceView): void }
 type TestRecipient = (recipient: Recipient) => Promise<
   { ok: true; value: { status: string } } | { ok: false; error: { message: string } }
 >
-const NS = 'feishu-hitl-notifier'
 const EMPTY: NotifierConfiguration = { enabled: false, webBaseUrl: '', summaryMaxChars: 240, includeSessionTitle: true, recipients: [] }
 
 function copy(value: NotifierConfiguration): NotifierConfiguration {
@@ -98,9 +95,7 @@ export class FeishuSettingsController {
   private readonly unsubscribe: () => void
 
   constructor(
-    private readonly scope: SettingsScope<{ configuration: NotifierConfiguration }>,
-    private readonly api: SettingsApi,
-    private readonly describe: DescribeFace,
+    private readonly scope: SettingsFormScope<{ configuration: NotifierConfiguration }>,
     private readonly testRecipient: TestRecipient,
   ) {
     this.unsubscribe = scope.subscribe(() => { this.sync() })
@@ -213,11 +208,12 @@ export class FeishuSettingsController {
     if (!before.writable || !before.dirty || before.invalid || before.saving) return
     this.store.set({ ...before, saving: true, error: null })
     try {
-      const response = await this.api.settings.mutate({ ns: NS, ops: [{ op: 'set', path: ['configuration'], value: copy(before.draft) }], ...(this.editRevision === undefined ? {} : { expectedRevision: this.editRevision }) })
-      if (!response.result.ok) throw new Error(response.result.error.message)
-      this.describe.acceptView(response.result.value)
-      const committed = (response.result.value.value as { configuration?: NotifierConfiguration } | null)
-        ?.configuration
+      const accepted = await this.scope.mutate(
+        [{ op: 'set', path: ['configuration'], value: copy(before.draft) }],
+        this.editRevision,
+      )
+      if (!accepted) throw new Error('Settings update was refused.')
+      const committed = this.scope.getSnapshot().value?.configuration
       if (committed === undefined) throw new Error('Settings response did not contain the saved configuration.')
       this.saved = copy(committed)
       this.editRevision = undefined

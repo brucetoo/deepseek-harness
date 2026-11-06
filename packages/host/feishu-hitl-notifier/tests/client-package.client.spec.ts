@@ -13,8 +13,8 @@ describe('client package publication', () => {
     expect(pkg.files).toContain('lib/client.js')
     expect(pkg.dsh.client).toMatchObject({ platform: 'web' })
     expect(pkg.dsh.client.inject).toEqual(expect.arrayContaining([
-      '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-runtime',
-      '@deepseek-ai/dsh-client-ui-settings', '@deepseek-ai/dsh-api-remotes',
+      '@deepseek-ai/dsh-client-ui-settings', '@deepseek-ai/dsh-client-ui-plugin-manager',
+      '@deepseek-ai/dsh-api-remotes',
     ]))
     expect(pkg.scripts.bundle).toBe('tsdown')
   })
